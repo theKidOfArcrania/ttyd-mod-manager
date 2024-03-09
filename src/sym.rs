@@ -268,7 +268,24 @@ impl RawSymtab {
         let headers = rdr.headers()?.clone();
         for record in rdr.records() {
             let record = record?;
-            syms.push(record.deserialize(Some(&headers))?);
+            let mut ent: RawSymEntry = record.deserialize(Some(&headers))?;
+
+            let replmap = HashMap::from([
+                ('（', "$op"),
+                ('）', "$cp"),
+                ('$', "$$"),
+            ]);
+            if ent.name.chars().any(|c| replmap.contains_key(&c)) {
+                let mut ret = String::with_capacity(ent.name.capacity() * 2);
+                for c in ent.name.chars() {
+                    match replmap.get(&c) {
+                        None => ret.push(c),
+                        Some(repl) => ret.push_str(repl),
+                    }
+                }
+                ent.name = ret;
+            }
+            syms.push(ent);
         }
 
         Ok(Self { syms })
