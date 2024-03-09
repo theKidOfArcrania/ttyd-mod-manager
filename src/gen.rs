@@ -36,11 +36,16 @@ pub enum CodeLine {
     }
 }
 
+pub struct Definition {
+    pub declare: Option<String>,
+    pub definition: String,
+}
+
 impl CodeLine {
-    pub fn gen(&self, ident: String) -> String {
+    pub fn gen(&self, ident: String, local: bool) -> Definition {
         match self {
             CodeLine::Variable { vartype, value } => {
-                vartype.make_decl(ident, value.clone())
+                vartype.make_decl(ident, value.clone(), local)
             }
         }
     }
@@ -193,10 +198,20 @@ impl CType {
         }
     }
 
-    pub fn make_decl(&self, name: String, value: Option<String>) -> String {
+    pub fn make_decl(
+        &self,
+        name: String,
+        value: Option<String>,
+        local: bool,
+    ) -> Definition {
         let (cst, base_type, array) = self.make_decl_parts();
-        format!(
-            "{}{base_type} {name}{array}{}{};",
+        let definition = format!(
+            "{}{}{base_type} {name}{array}{}{};",
+            if local {
+                "static "
+            } else {
+                ""
+            },
             if cst {
                 "const "
             } else {
@@ -211,7 +226,20 @@ impl CType {
                 None => "",
                 Some(s) => s,
             },
-        )
+        );
+        let declare = if local {
+            None
+        } else {
+            Some(format!(
+                "extern {}{base_type} {name}{array};",
+                if cst {
+                    "const "
+                } else {
+                    ""
+                },
+            ))
+        };
+        Definition { declare, definition }
     }
 }
 
@@ -528,13 +556,12 @@ pub fn generate_line(
     overlay: &rel::RelocOverlay,
     symdb: &sym::SymbolDatabase,
     ent: &sym::RawSymEntry,
-) -> Res<String> {
+) -> Res<Definition> {
     let area_id = overlay.backing().header().id.get();
     let addr = rel::SectionAddr::new(ent.sec_id, ent.sec_offset);
     let dat = Data::read(overlay, ent)?;
-    Ok(
-        dat.data
-            .to_code(ent.sec_name, overlay, symdb)?
-            .gen(symdb.symbol_name(sym::SymAddr::Rel(area_id, addr)))
-    )
+    let code_line = dat.data
+        .to_code(ent.sec_name, overlay, symdb)?;
+    let symbol_name = symdb.symbol_name(sym::SymAddr::Rel(area_id, addr));
+    Ok(code_line.gen(symbol_name, ent.local))
 }

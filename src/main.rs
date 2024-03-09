@@ -4,6 +4,7 @@
 use std::{
     collections::{BTreeSet, HashMap},
     fs::{self, File},
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -92,6 +93,8 @@ enum RelCommands {
     Source {
         /// File path to the symbol csv database for the game
         symdb: String,
+        /// Path to export source files to
+        outdir: String,
     },
 }
 
@@ -362,7 +365,10 @@ fn main() -> Result<(), anyhow::Error> {
                     parser.add_from_symdb(&symdb)?;
                     parser.dump_scripts(&symdb);
                 }
-                RelCommands::Source { symdb } => {
+                RelCommands::Source { symdb, outdir } => {
+                    let outdir = PathBuf::from(outdir);
+                    fs::create_dir_all(&outdir)?;
+
                     let mut overlay = rel::RelocOverlay::new(&rel);
                     overlay.resolve_relocations(&HashMap::new(), true)?;
 
@@ -376,12 +382,48 @@ fn main() -> Result<(), anyhow::Error> {
                         )?
                     );
                     
-                    let mut code = String::new();
+                    let mut codes = HashMap::new();
+                    let mut headers = BTreeSet::new();
                     for s in symdb.rel_iter(area_id) {
-                        code.push_str(&gen::generate_line(&overlay, &symdb, s)?);
+                        let mut file = format!("{}.c", area_name);
+                        let mut file_include = format!("{}.h", area_name);
+                        for ns in s.namespace.split(" ") {
+                            if ns.ends_with(".o") {
+                                file = format!("{}.c", &ns[..ns.len() - 2]);
+                                file_include = format!("{}.h", &ns[..ns.len() - 2]);
+                                break;
+                            }
+                        }
+                        let def = gen::generate_line(&overlay, &symdb, s)?;
+                        let code = codes.entry(file).or_insert_with(String::new);
+                        code.push_str(&def.definition);
                         code.push_str("\n");
+
+                        if let Some(decl) = &def.declare {
+                            headers.insert(format!(
+                                "#include \"{file_include}\"\n"
+                            ));
+                            let code = codes
+                                .entry(file_include)
+                                .or_insert_with(String::new);
+                            code.push_str(decl);
+                            code.push_str("\n");
+                        }
                     }
-                    println!("{code}");
+
+                    for (file, code) in codes.into_iter() {
+                        let is_source = file.ends_with(".c");
+                        let mut file = File::create(outdir.join(file))?;
+                        if is_source {
+                            for inc_line in &headers {
+                                file.write_all(inc_line.as_bytes())?;
+                            }
+                            if headers.is_empty() {
+                                file.write_all(b"\n")?;
+                            }
+                        }
+                        file.write_all(code.as_bytes())?;
+                    }
                 }
             }
             Ok(())

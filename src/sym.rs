@@ -1,6 +1,6 @@
 use std::{
+    collections::{BTreeSet, HashMap, HashSet},
     io,
-    collections::{HashMap, BTreeSet},
 };
 
 use serde::{de::IntoDeserializer, Deserialize, Serialize};
@@ -153,6 +153,8 @@ pub struct RawSymEntry {
     #[serde(rename = "type")]
     pub value_type: DataType,
     pub value: String,
+    #[serde(skip)]
+    pub local: bool,
 }
 
 mod serde_opt_u32_hex {
@@ -266,15 +268,22 @@ impl RawSymtab {
         let mut syms = Vec::new();
 
         let headers = rdr.headers()?.clone();
+        let replmap = HashMap::from([
+            ('（', "$op"),
+            ('）', "$cp"),
+            ('$', "$$"),
+        ]);
+        let special_rel = HashSet::from([
+            String::from("_unresolved"),
+            "_prolog".into(),
+            "_epilog".into(),
+        ]);
+
         for record in rdr.records() {
             let record = record?;
             let mut ent: RawSymEntry = record.deserialize(Some(&headers))?;
 
-            let replmap = HashMap::from([
-                ('（', "$op"),
-                ('）', "$cp"),
-                ('$', "$$"),
-            ]);
+            // Mangle illegal characters
             if ent.name.chars().any(|c| replmap.contains_key(&c)) {
                 let mut ret = String::with_capacity(ent.name.capacity() * 2);
                 for c in ent.name.chars() {
@@ -284,6 +293,17 @@ impl RawSymtab {
                     }
                 }
                 ent.name = ret;
+            }
+
+            // Set local flag
+            ent.local = false;
+            if &ent.area != "_main" {
+                ent.local = true;
+            }
+
+            // Special rel sections that need to be global
+            if special_rel.contains(&ent.name) {
+                ent.local = false;
             }
             syms.push(ent);
         }
