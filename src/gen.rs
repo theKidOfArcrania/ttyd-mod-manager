@@ -6,7 +6,8 @@ use std::fmt::Write as _;
 
 use interop::{CReader, CTypeable};
 
-// TODO: assume size_of(u32) <= size_of(usize)
+// Sanity check to ensure that usize is as big (if not bigger) than u32
+const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
 
 const ERROR_JIS: &'static str = "Unable to encode string to/from shift_jis";
 #[derive(Debug, Error)]
@@ -177,10 +178,7 @@ impl Data {
                     sym::ClassType::NpcSetupInfo => Data::NpcSetupInfo(
                         reader.read_val_full()?
                     ),
-                    _ => {
-                        // TODO:
-                        Data::Zero(reader.read_val_full()?)
-                    }
+                    _ => todo!(),
                 }
             },
         };
