@@ -29,7 +29,10 @@ pub trait CTypeable {
         if let Some(ret) = map_lock.get::<KeyCType<Self::Canonical>>() {
             return ret.clone();
         }
-        if map_lock.insert::<KeyPoisoned<Self::Canonical>>(()).is_some() {
+        if map_lock
+            .insert::<KeyPoisoned<Self::Canonical>>(())
+            .is_some()
+        {
             panic!("Recursive types are not supported!");
         }
         drop(map_lock);
@@ -101,17 +104,14 @@ impl CTypeable for String {
     }
 }
 
-impl <T: CTypeable> CTypeable for [&T] {
+impl<T: CTypeable> CTypeable for [&T] {
     type Canonical = [&'static T::Canonical];
     fn compute_type() -> CTypeKind {
-        CTypeKind::PtrArray(
-            None,
-            Box::new(CType::new(false, T::get_type())),
-        )
+        CTypeKind::PtrArray(None, Box::new(CType::new(false, T::get_type())))
     }
 }
 
-impl <const SIZE: usize, T: CTypeable> CTypeable for [&T; SIZE] {
+impl<const SIZE: usize, T: CTypeable> CTypeable for [&T; SIZE] {
     type Canonical = [&'static T::Canonical; SIZE];
 
     fn compute_type() -> CTypeKind {
@@ -146,12 +146,12 @@ impl CTypePrim {
     pub fn c_type(&self) -> &'static str {
         match self {
             CTypePrim::Void => "void",
-            CTypePrim::I8 =>  "char",
+            CTypePrim::I8 => "char",
             CTypePrim::I16 => "short",
             // TODO: assume int = 32 bit
             CTypePrim::I32 => "int",
             CTypePrim::I64 => "long long",
-            CTypePrim::U8 =>  "unsigned char",
+            CTypePrim::U8 => "unsigned char",
             CTypePrim::U16 => "unsigned short",
             CTypePrim::U32 => "unsigned int",
             CTypePrim::U64 => "unsigned long long",
@@ -194,7 +194,7 @@ impl PartialEq for Number {
     }
 }
 
-impl Eq for Number { }
+impl Eq for Number {}
 
 impl Hash for Number {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -224,7 +224,12 @@ impl CEnum {
             lookup_name.insert(v.name.clone(), i);
             lookup_value.insert(v.value, i);
         }
-        Self { name, variants, lookup_name, lookup_value }
+        Self {
+            name,
+            variants,
+            lookup_name,
+            lookup_value,
+        }
     }
 
     pub fn variants(&self) -> &[Variant] {
@@ -232,9 +237,7 @@ impl CEnum {
     }
 
     pub fn lookup_by_name(&self, name: &str) -> Option<&Variant> {
-        self.lookup_name
-            .get(name)
-            .map(|ind| &self.variants[*ind])
+        self.lookup_name.get(name).map(|ind| &self.variants[*ind])
     }
 
     pub fn lookup_by_value(&self, value: Number) -> Option<&Variant> {
@@ -286,13 +289,27 @@ macro_rules! ctype {
 
 #[macro_export]
 macro_rules! ctype_prim {
-    (void) => { $crate::CTypePrim::Void };
-    (i8) => { $crate::CTypePrim::I8 };
-    (i16) => { $crate::CTypePrim::I16 };
-    (i32) => { $crate::CTypePrim::I32 };
-    (i64) => { $crate::CTypePrim::I64 };
-    (f32) => { $crate::CTypePrim::F32 };
-    (f64) => { $crate::CTypePrim::F64 };
+    (void) => {
+        $crate::CTypePrim::Void
+    };
+    (i8) => {
+        $crate::CTypePrim::I8
+    };
+    (i16) => {
+        $crate::CTypePrim::I16
+    };
+    (i32) => {
+        $crate::CTypePrim::I32
+    };
+    (i64) => {
+        $crate::CTypePrim::I64
+    };
+    (f32) => {
+        $crate::CTypePrim::F32
+    };
+    (f64) => {
+        $crate::CTypePrim::F64
+    };
 }
 
 #[macro_export]
@@ -331,10 +348,9 @@ impl CType {
         match &self.kind {
             CTypeKind::Prim(_) => None,
             CTypeKind::TDef(_) => None,
-            CTypeKind::Array(_, p) => Some(Self::new(
-                false,
-                CTypeKind::Prim(*p),
-            )),
+            CTypeKind::Array(_, p) => {
+                Some(Self::new(false, CTypeKind::Prim(*p)))
+            }
             CTypeKind::PtrArray(_, elem) => Some(ctype!(
                 mut &{(&**elem).clone()}
             )),
@@ -344,11 +360,9 @@ impl CType {
 
     fn make_decl_parts(&self) -> (bool, String, String) {
         match &self.kind {
-            CTypeKind::Prim(prim) => (
-                self.const_,
-                prim.c_type().to_string(),
-                String::new(),
-            ),
+            CTypeKind::Prim(prim) => {
+                (self.const_, prim.c_type().to_string(), String::new())
+            }
             CTypeKind::TDef(s) => (self.const_, s.name().into(), String::new()),
             CTypeKind::Array(dim, elem) => (
                 self.const_,
@@ -362,11 +376,7 @@ impl CType {
                 let (cst, mut base_type, _) = elem.make_decl_parts();
                 base_type.push_str(&format!(
                     "*{}",
-                    if self.const_ {
-                        "const "
-                    } else {
-                        ""
-                    },
+                    if self.const_ { "const " } else { "" },
                 ));
 
                 let arr_data = match dim {
@@ -380,16 +390,8 @@ impl CType {
                 let (cst, mut base_type, arr_data) = elem.make_decl_parts();
                 base_type.push_str(&format!(
                     "{}*{}",
-                    if !arr_data.is_empty() {
-                        "*"
-                    } else {
-                        ""
-                    },
-                    if self.const_ {
-                        "const "
-                    } else {
-                        ""
-                    },
+                    if !arr_data.is_empty() { "*" } else { "" },
+                    if self.const_ { "const " } else { "" },
                 ));
                 (cst, base_type, String::new())
             }
@@ -405,21 +407,9 @@ impl CType {
         let (cst, base_type, array) = self.make_decl_parts();
         let definition = format!(
             "{}{}{base_type} {name}{array}{}{};",
-            if local {
-                "static "
-            } else {
-                ""
-            },
-            if cst {
-                "const "
-            } else {
-                ""
-            },
-            if value.is_some() {
-                " = "
-            } else {
-                ""
-            },
+            if local { "static " } else { "" },
+            if cst { "const " } else { "" },
+            if value.is_some() { " = " } else { "" },
             match value.as_ref() {
                 None => "",
                 Some(s) => s,
@@ -430,14 +420,13 @@ impl CType {
         } else {
             Some(format!(
                 "extern {}{base_type} {name}{array};",
-                if cst {
-                    "const "
-                } else {
-                    ""
-                },
+                if cst { "const " } else { "" },
             ))
         };
-        Definition { declare, definition }
+        Definition {
+            declare,
+            definition,
+        }
     }
 }
 
@@ -447,17 +436,8 @@ impl std::fmt::Display for CType {
         write!(
             f,
             "{}{base_type}{}",
-            if cst {
-                "const "
-            } else {
-                ""
-            },
-            if array.is_empty() {
-                ""
-            } else {
-                "*"
-            }
+            if cst { "const " } else { "" },
+            if array.is_empty() { "" } else { "*" }
         )
     }
 }
-

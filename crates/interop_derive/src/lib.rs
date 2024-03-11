@@ -17,10 +17,7 @@ struct VariantIter<'a, I: Iterator<Item = &'a syn::Variant>> {
 }
 
 impl<'a, I: Iterator<Item = &'a syn::Variant>> VariantIter<'a, I> {
-    fn new(
-        attrs: &[syn::Attribute],
-        variants: I,
-    ) -> syn::Result<Self> {
+    fn new(attrs: &[syn::Attribute], variants: I) -> syn::Result<Self> {
         let ident_repr = format_ident!("repr");
         let mut discrim = num::PrimType::U32;
         for attr in attrs {
@@ -49,19 +46,20 @@ impl<'a, I: Iterator<Item = &'a syn::Variant>> VariantIter<'a, I> {
     fn process_variant(
         &mut self,
         v: &'a syn::Variant,
-    ) -> syn::Result<(num::Number, &'a syn::Variant)>{
+    ) -> syn::Result<(num::Number, &'a syn::Variant)> {
         let (cur_val, span) = if let Some((_, val)) = &v.discriminant {
             match val {
                 syn::Expr::Lit(syn::ExprLit {
                     attrs: _,
                     lit: syn::Lit::Int(lit),
-                }) => {
-                    (if self.is_signed {
+                }) => (
+                    if self.is_signed {
                         num::Number::Signed(lit.base10_parse()?)
                     } else {
                         num::Number::Unsigned(lit.base10_parse()?)
-                    }, lit.span())
-                }
+                    },
+                    lit.span(),
+                ),
                 val => {
                     return Err(syn::Error::new_spanned(
                         val,
@@ -84,10 +82,12 @@ impl<'a, I: Iterator<Item = &'a syn::Variant>> VariantIter<'a, I> {
         // Ensure all enum variants are units.
         match &v.fields {
             syn::Fields::Unit => {}
-            _ => return Err(syn::Error::new_spanned(
-                &v.fields,
-                "All variants must be units",
-            ))
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &v.fields,
+                    "All variants must be units",
+                ))
+            }
         };
 
         self.next_value = cur_val + 1;
@@ -110,7 +110,8 @@ fn derive_typeable_err(item: TokenStream) -> syn::Result<TokenStream2> {
     let body = match derive.data {
         syn::Data::Struct(s) => {
             let name = derive.ident.to_string();
-            let fields: Vec<_> = s.fields
+            let fields: Vec<_> = s
+                .fields
                 .iter()
                 .enumerate()
                 .map(|(i, f)| {
@@ -139,7 +140,7 @@ fn derive_typeable_err(item: TokenStream) -> syn::Result<TokenStream2> {
                     })
                 ))
             })
-        },
+        }
         syn::Data::Enum(e) => {
             let name = derive.ident.to_string();
             let mut vars = Vec::new();
@@ -172,7 +173,7 @@ fn derive_typeable_err(item: TokenStream) -> syn::Result<TokenStream2> {
                     ))
                 ))
             })
-        },
+        }
         syn::Data::Union(_) => Err(syn::Error::new_spanned(
             &derive.ident,
             "Unions are not supported",
@@ -252,14 +253,13 @@ fn derive_read_err(item: TokenStream) -> syn::Result<TokenStream2> {
     let ptr_type = attrs
         .ptr_type
         .ok_or_else(|| {
-            syn::Error::new_spanned(
-                &derive.ident,
-                "ptr attribute is required",
-            )
+            syn::Error::new_spanned(&derive.ident, "ptr attribute is required")
         })?
         .val;
     let body = match derive.data {
-        syn::Data::Struct(s) => read_fields(&derive.ident, &s.fields, &ptr_type),
+        syn::Data::Struct(s) => {
+            read_fields(&derive.ident, &s.fields, &ptr_type)
+        }
         syn::Data::Enum(e) => {
             let mut vars = Vec::new();
 
@@ -317,7 +317,8 @@ fn derive_size_err(item: TokenStream) -> syn::Result<TokenStream2> {
 
     let body = match derive.data {
         syn::Data::Struct(s) => {
-            let field_list: Vec<_> = s.fields
+            let field_list: Vec<_> = s
+                .fields
                 .into_iter()
                 .enumerate()
                 .map(|(i, f)| {
@@ -373,7 +374,8 @@ fn derive_const_size_err(item: TokenStream) -> syn::Result<TokenStream2> {
 
     let body = match derive.data {
         syn::Data::Struct(s) => {
-            let field_list: Vec<_> = s.fields
+            let field_list: Vec<_> = s
+                .fields
                 .into_iter()
                 .map(|f| {
                     let ty = &f.ty;
@@ -431,10 +433,7 @@ fn derive_dump_err(item: TokenStream) -> syn::Result<TokenStream2> {
     let ctx_type = attrs
         .ctx_type
         .ok_or_else(|| {
-            syn::Error::new_spanned(
-                &derive.ident,
-                "ctx attribute is required",
-            )
+            syn::Error::new_spanned(&derive.ident, "ctx attribute is required")
         })?
         .val;
 
@@ -450,7 +449,8 @@ fn derive_dump_err(item: TokenStream) -> syn::Result<TokenStream2> {
 
     let body = match derive.data {
         syn::Data::Struct(s) => {
-            let field_list: Vec<_> = s.fields
+            let field_list: Vec<_> = s
+                .fields
                 .into_iter()
                 .enumerate()
                 .map(|(i, f)| {
@@ -467,7 +467,7 @@ fn derive_dump_err(item: TokenStream) -> syn::Result<TokenStream2> {
                     } else {
                         quote!(::core::write!(f, ", ")?;)
                     };
-                    quote_spanned!{span=>
+                    quote_spanned! {span=>
                         #before
                         ::interop::CDump::dump(&self.#member, f, ctx)?;
                     }

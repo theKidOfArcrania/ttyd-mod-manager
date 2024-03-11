@@ -1,4 +1,7 @@
-use syn::{parse::{Parse, ParseStream}, punctuated::Punctuated};
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+};
 
 pub struct Attribute<T> {
     pub ident: syn::Ident,
@@ -14,7 +17,6 @@ impl<T: Parse> Attribute<T> {
             eq_token: input.parse()?,
             val: input.parse()?,
         })
-
     }
 }
 
@@ -32,12 +34,8 @@ impl Parse for AttrsRaw {
             "ctx" => Ok(Self::Ctx(Attribute::parse(ident, input)?)),
             "error" => Ok(Self::Error(Attribute::parse(ident, input)?)),
             "ptr" => Ok(Self::Ptr(Attribute::parse(ident, input)?)),
-            _ => Err(syn::Error::new_spanned(
-                ident,
-                "Invalid attribute",
-            )),
+            _ => Err(syn::Error::new_spanned(ident, "Invalid attribute")),
         }
-
     }
 }
 
@@ -67,7 +65,7 @@ impl ReadAttrs {
                     }
 
                     self.ptr_type = Some(attr);
-                },
+                }
             }
         }
 
@@ -102,7 +100,7 @@ impl DumpAttrs {
                     }
 
                     self.ctx_type = Some(attr);
-                },
+                }
                 AttrsRaw::Error(attr) => {
                     if self.error_type.is_some() {
                         return Err(syn::Error::new_spanned(
@@ -112,11 +110,10 @@ impl DumpAttrs {
                     }
 
                     self.error_type = Some(attr);
-                },
+                }
             }
         }
 
         Ok(())
     }
 }
-

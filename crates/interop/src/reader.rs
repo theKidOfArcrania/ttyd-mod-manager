@@ -1,11 +1,12 @@
 use std::backtrace::Backtrace;
 
 mod __private {
-    pub trait PtrInt { }
+    pub trait PtrInt {}
 }
 
 pub trait PtrInt: __private::PtrInt + Sized + Copy {
-    fn read_rel<P, R>(reader: &mut R) -> Result<P::Rel<Self>, R::Error> where
+    fn read_rel<P, R>(reader: &mut R) -> Result<P::Rel<Self>, R::Error>
+    where
         P: Ptr,
         R: CReader<P> + ?Sized;
 }
@@ -54,7 +55,11 @@ pub trait CReader<P: Ptr> {
     fn error_complex_symbol(&self) -> Self::Error;
     fn error_bad_value(&self, val: String) -> Self::Error;
     fn error_custom(&self, msg: String) -> Self::Error;
-    fn error_custom_with(&self, msg: String, backtrace: Backtrace) -> Self::Error;
+    fn error_custom_with(
+        &self,
+        msg: String,
+        backtrace: Backtrace,
+    ) -> Self::Error;
 
     fn read_rel_u8(&mut self) -> Result<P::Rel<u8>, Self::Error>;
     fn read_rel_u16(&mut self) -> Result<P::Rel<u16>, Self::Error>;
@@ -84,24 +89,25 @@ pub trait CReader<P: Ptr> {
     fn read_u8(&mut self) -> Result<u8, Self::Error> {
         match self.read_rel_u8()?.get_type() {
             SymbolicType::Value(v) => Ok(*v),
-            _ => Err(self.error_complex_symbol())
+            _ => Err(self.error_complex_symbol()),
         }
     }
     fn read_u16(&mut self) -> Result<u16, Self::Error> {
         match self.read_rel_u16()?.get_type() {
             SymbolicType::Value(v) => Ok(*v),
-            _ => Err(self.error_complex_symbol())
+            _ => Err(self.error_complex_symbol()),
         }
     }
     fn read_u32(&mut self) -> Result<u32, Self::Error> {
         match self.read_rel_u32()?.get_type() {
             SymbolicType::Value(v) => Ok(*v),
-            _ => Err(self.error_complex_symbol()) }
+            _ => Err(self.error_complex_symbol()),
+        }
     }
     fn read_u64(&mut self) -> Result<u64, Self::Error> {
         match self.read_rel_u64()?.get_type() {
             SymbolicType::Value(v) => Ok(*v),
-            _ => Err(self.error_complex_symbol())
+            _ => Err(self.error_complex_symbol()),
         }
     }
     fn read_ptr(&mut self) -> Result<P, Self::Error> {
@@ -143,7 +149,8 @@ pub trait CReader<P: Ptr> {
 }
 
 pub trait CRead<P: Ptr>: Sized {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
         R: CReader<P> + ?Sized;
 }
 
@@ -173,8 +180,9 @@ impl_CRead! {
 }
 
 impl<P: Ptr, T: CRead<P>> CRead<P> for Vec<T> {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<P> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<P> + ?Sized,
     {
         let mut ret = Vec::new();
         while !reader.eof() {
@@ -185,16 +193,18 @@ impl<P: Ptr, T: CRead<P>> CRead<P> for Vec<T> {
 }
 
 impl<P: Ptr, T: CRead<P>, const SIZE: usize> CRead<P> for [T; SIZE] {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<P> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<P> + ?Sized,
     {
         [(); SIZE].try_map(|_| T::read(reader))
     }
 }
 
 impl<P: Ptr> CRead<P> for P {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<P> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<P> + ?Sized,
     {
         reader.read_ptr()
     }
@@ -205,6 +215,7 @@ pub trait CReadWith<P: Ptr>: Sized {
     fn read_with<R>(
         reader: &mut R,
         tp: Self::ValType,
-    ) -> Result<Self, R::Error> where
+    ) -> Result<Self, R::Error>
+    where
         R: CReader<P> + ?Sized;
 }

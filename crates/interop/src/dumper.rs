@@ -60,7 +60,8 @@ impl_CDump! {
     f64: dump_float,
 }
 
-fn dump_float<T, Ctx>(val: &T, f: &mut Dumper, _: &Ctx) -> fmt::Result where
+fn dump_float<T, Ctx>(val: &T, f: &mut Dumper, _: &Ctx) -> fmt::Result
+where
     T: Display + LowerExp,
 {
     let norm = format!("{val}");
@@ -70,7 +71,10 @@ fn dump_float<T, Ctx>(val: &T, f: &mut Dumper, _: &Ctx) -> fmt::Result where
         ("inf", "(1.0/0.0)"),
         ("-inf", "(-1.0/0.0)"),
     ]);
-    if norm.ends_with("000") || norm.starts_with("0.") || norm.starts_with("-0.") {
+    if norm.ends_with("000")
+        || norm.starts_with("0.")
+        || norm.starts_with("-0.")
+    {
         write!(f, "{eform}")
     } else if norm.find('.').is_none() {
         write!(f, "{norm}.0")
@@ -85,7 +89,8 @@ fn dump_list<'a, Ctx, T, E>(
     iter: impl Iterator<Item = &'a T>,
     f: &mut Dumper,
     ctx: &Ctx,
-) -> Result<(), E> where
+) -> Result<(), E>
+where
     T: CDump<Ctx, Error = E> + 'a,
     E: From<fmt::Error>,
 {
@@ -124,7 +129,10 @@ impl<Ctx, T: CDump<Ctx>> CDump<Ctx> for Vec<T> {
     }
 }
 
-pub fn dumps<Ctx, T: CDump<Ctx> + ?Sized>(val: &T, ctx: &Ctx) -> Result<String, T::Error> {
+pub fn dumps<Ctx, T: CDump<Ctx> + ?Sized>(
+    val: &T,
+    ctx: &Ctx,
+) -> Result<String, T::Error> {
     let mut dumper = Dumper::default();
     val.dump(&mut dumper, ctx)?;
     Ok(dumper.res)

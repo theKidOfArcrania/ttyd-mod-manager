@@ -1,6 +1,6 @@
-use syn::parse::{Parse, ParseStream};
 use core::mem::size_of;
 use quote::format_ident;
+use syn::parse::{Parse, ParseStream};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Number {
