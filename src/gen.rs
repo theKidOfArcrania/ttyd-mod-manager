@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use interop::{CReader, CTypeable};
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
-const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
+const _: () = assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<u32>());
 
 const ERROR_JIS: &'static str = "Unable to encode string to/from shift_jis";
 #[derive(Debug, Error)]
