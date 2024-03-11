@@ -13,9 +13,7 @@ pub struct Ptr<T: ?Sized> {
 
 impl<T: ?Sized> std::fmt::Debug for Ptr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ptr")
-            .field("addr", &self.addr)
-            .finish()
+        f.debug_struct("Ptr").field("addr", &self.addr).finish()
     }
 }
 
@@ -32,8 +30,9 @@ impl<T: ?Sized> interop::Size for Ptr<T> {
 }
 
 impl<T: ?Sized> CRead<sym::SymAddr> for Ptr<T> {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: interop::CReader<sym::SymAddr> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: interop::CReader<sym::SymAddr> + ?Sized,
     {
         Ok(Self {
             addr: reader.read_ptr()?,
@@ -52,7 +51,6 @@ impl<T: ?Sized> CDump<sym::SymbolDatabase> for Ptr<T> {
     ) -> fmt::Result {
         self.addr.dump(out, ctx)
     }
-
 }
 
 impl<T: CTypeable + ?Sized> CTypeable for Ptr<T> {
@@ -72,9 +70,7 @@ pub struct ConstPtr<T: ?Sized> {
 
 impl<T: ?Sized> std::fmt::Debug for ConstPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ptr")
-            .field("addr", &self.addr)
-            .finish()
+        f.debug_struct("Ptr").field("addr", &self.addr).finish()
     }
 }
 
@@ -91,8 +87,9 @@ impl<T: ?Sized> interop::Size for ConstPtr<T> {
 }
 
 impl<T: ?Sized> CRead<sym::SymAddr> for ConstPtr<T> {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: interop::CReader<sym::SymAddr> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: interop::CReader<sym::SymAddr> + ?Sized,
     {
         Ok(Self {
             addr: reader.read_ptr()?,
@@ -142,18 +139,18 @@ pub struct NpcSetupInfo {
     pub reaction_flags: u32,
     pub init_event: Ptr<evt::Script>,
     pub regular_event: Ptr<evt::Script>, //0x10, TODO: rename?
-    pub talk_event: Ptr<evt::Script>, //0x14
-    pub dead_event: Ptr<evt::Script>, //0x18
-    pub find_event: Ptr<evt::Script>, //0x1C
-    pub lost_event: Ptr<evt::Script>, //0x20
-    pub return_event: Ptr<evt::Script>, //0x24
-    pub blow_event: Ptr<evt::Script>, //0x28
+    pub talk_event: Ptr<evt::Script>,    //0x14
+    pub dead_event: Ptr<evt::Script>,    //0x18
+    pub find_event: Ptr<evt::Script>,    //0x1C
+    pub lost_event: Ptr<evt::Script>,    //0x20
+    pub return_event: Ptr<evt::Script>,  //0x24
+    pub blow_event: Ptr<evt::Script>,    //0x28
     pub territory_type: NpcTerritoryType, //0x2C
-    pub territory_base: [f32; 3], //0x30
-    pub territory_loiter: [f32; 3], //0x3C
-    pub search_range: f32, //0x48
-    pub search_angle: f32, //0x4C
-    pub homing_range: f32, //0x50
-    pub homing_angle: f32, //0x54
-    pub battle_info_id: u32, //0x58, TODO: rename?
+    pub territory_base: [f32; 3],        //0x30
+    pub territory_loiter: [f32; 3],      //0x3C
+    pub search_range: f32,               //0x48
+    pub search_angle: f32,               //0x4C
+    pub homing_range: f32,               //0x50
+    pub homing_angle: f32,               //0x54
+    pub battle_info_id: u32,             //0x58, TODO: rename?
 }

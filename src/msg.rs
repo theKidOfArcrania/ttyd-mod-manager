@@ -13,16 +13,16 @@ impl Messages {
         let mut ret = Self::default();
         let mut parts = msg.split(|b| b == &0);
         loop {
-            let msgkey = parts.next().ok_or_else(|| {
-                anyhow!("EOF while reading message file")
-            })?;
+            let msgkey = parts
+                .next()
+                .ok_or_else(|| anyhow!("EOF while reading message file"))?;
             if msgkey.is_empty() {
                 break;
             }
 
-            let msgvalue = parts.next().ok_or_else(|| {
-                anyhow!("EOF while reading msg base")
-            })?;
+            let msgvalue = parts
+                .next()
+                .ok_or_else(|| anyhow!("EOF while reading msg base"))?;
             if !ret.add_message(msgkey.to_vec(), msgvalue.to_vec()) {
                 bail!(
                     "Two message keys with value {}",
@@ -38,7 +38,9 @@ impl Messages {
         let mut msgkey: Option<&[u8]> = None;
         let mut msgvalue = Vec::new();
         for line in patch.trim_ascii_end().split(|b| b == &0xa) {
-            if let Some(key) = line.strip_prefix(b"[#").and_then(|l| l.strip_suffix(b"#]")) {
+            if let Some(key) =
+                line.strip_prefix(b"[#").and_then(|l| l.strip_suffix(b"#]"))
+            {
                 if let Some(oldkey) = msgkey {
                     self.add_message(oldkey.to_vec(), msgvalue);
                     msgvalue = Vec::new();
@@ -76,7 +78,10 @@ impl Messages {
             ret.extend_from_slice(&msg);
             ret.extend_from_slice(b"#]\n");
 
-            let body = self.msg_map.remove(&msg).expect("Should be valid message key");
+            let body = self
+                .msg_map
+                .remove(&msg)
+                .expect("Should be valid message key");
             ret.extend_from_slice(&body);
             ret.push(b'\n');
         }
@@ -90,7 +95,10 @@ impl Messages {
             ret.extend_from_slice(&msg);
             ret.push(0);
 
-            let body = self.msg_map.remove(&msg).expect("Should be valid message key");
+            let body = self
+                .msg_map
+                .remove(&msg)
+                .expect("Should be valid message key");
             ret.extend_from_slice(&body);
             ret.push(0);
         }
@@ -99,7 +107,10 @@ impl Messages {
     }
 }
 
-pub fn patch_msgfile(base: Option<Vec<u8>>, patch: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+pub fn patch_msgfile(
+    base: Option<Vec<u8>>,
+    patch: Vec<u8>,
+) -> anyhow::Result<Vec<u8>> {
     let mut msgs = match base {
         None => bail!("Missing base file for patch"),
         Some(base) => Messages::parse(base)?,

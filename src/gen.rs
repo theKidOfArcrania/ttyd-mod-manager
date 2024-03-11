@@ -7,7 +7,8 @@ use std::fmt::Write as _;
 use interop::{CReader, CTypeable};
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
-const _: () = assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<u32>());
+const _: () =
+    assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<u32>());
 
 const ERROR_JIS: &'static str = "Unable to encode string to/from shift_jis";
 #[derive(Debug, Error)]
@@ -20,7 +21,7 @@ pub enum ErrorType {
     FormattingError,
 }
 
-mk_err_wrapper!{
+mk_err_wrapper! {
     ErrorType {
         ReaderError => reader::ErrorType,
     }
@@ -46,7 +47,7 @@ pub enum CodeLine {
     Variable {
         vartype: interop::CType,
         value: Option<String>,
-    }
+    },
 }
 
 impl CodeLine {
@@ -62,8 +63,9 @@ impl CodeLine {
 #[derive(Debug)]
 pub struct JPString(pub String);
 impl<P: interop::Ptr> interop::CRead<P> for JPString {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<P> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<P> + ?Sized,
     {
         let vec: Vec<u8> = reader.read_val()?;
         let (s, _, errors) = encoding_rs::SHIFT_JIS.decode(&vec);
@@ -78,7 +80,11 @@ impl<P: interop::Ptr> interop::CRead<P> for JPString {
 impl<Ctx> interop::CDump<Ctx> for JPString {
     type Error = Error;
 
-    fn dump(&self, f: &mut interop::Dumper, _: &Ctx) -> Result<(), Self::Error> {
+    fn dump(
+        &self,
+        f: &mut interop::Dumper,
+        _: &Ctx,
+    ) -> Result<(), Self::Error> {
         let (raw_bytes, _, errors) = encoding_rs::SHIFT_JIS.encode(&self.0);
         if errors {
             bail!(EncodingError);
@@ -114,8 +120,9 @@ impl interop::Size for JPString {
 #[derive(Clone, Copy, Debug)]
 pub struct Zeroed(pub usize);
 impl<P: interop::Ptr> interop::CRead<P> for Zeroed {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<P> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<P> + ?Sized,
     {
         let cnt = reader.remaining();
         reader.skip(cnt)?;
@@ -160,11 +167,17 @@ impl Data {
         let mut reader = reader::Reader::new(overlay, ent);
         let res = match ent.value_type {
             sym::DataType::Simple(tp) => match tp {
-                sym::SimpleType::PtrArr => Data::PtrArr(reader.read_val_full()?),
+                sym::SimpleType::PtrArr => {
+                    Data::PtrArr(reader.read_val_full()?)
+                }
                 sym::SimpleType::Ptr => Data::Ptr(reader.read_val_full()?),
-                sym::SimpleType::String => Data::String(reader.read_val_full()?),
+                sym::SimpleType::String => {
+                    Data::String(reader.read_val_full()?)
+                }
                 sym::SimpleType::Float => Data::Float(reader.read_val_full()?),
-                sym::SimpleType::Double => Data::Double(reader.read_val_full()?),
+                sym::SimpleType::Double => {
+                    Data::Double(reader.read_val_full()?)
+                }
                 sym::SimpleType::Zero => Data::Zero(reader.read_val_full()?),
                 sym::SimpleType::Evt => Data::Evt(reader.read_val_full()?),
                 sym::SimpleType::Function => {
@@ -173,13 +186,11 @@ impl Data {
                 }
                 sym::SimpleType::Vec3 => Data::Vec3(reader.read_val_full()?),
             },
-            sym::DataType::Class(tp) => {
-                match tp {
-                    sym::ClassType::NpcSetupInfo => Data::NpcSetupInfo(
-                        reader.read_val_full()?
-                    ),
-                    _ => todo!(),
+            sym::DataType::Class(tp) => match tp {
+                sym::ClassType::NpcSetupInfo => {
+                    Data::NpcSetupInfo(reader.read_val_full()?)
                 }
+                _ => todo!(),
             },
         };
         Ok(res)
@@ -197,11 +208,15 @@ impl Data {
             Data::PtrArr(addrs) => {
                 let mut pointee = None;
                 for addr in addrs {
-                    let cur_pointee = symdb.get(*addr)
-                        .and_then(|sym| Some(Data::read(overlay, &sym)
-                            .ok()?
-                            .get_type(sym.sec_name, overlay, symdb)
-                        ))
+                    let cur_pointee = symdb
+                        .get(*addr)
+                        .and_then(|sym| {
+                            Some(Data::read(overlay, &sym).ok()?.get_type(
+                                sym.sec_name,
+                                overlay,
+                                symdb,
+                            ))
+                        })
                         .unwrap_or_else(|| interop::ctype!(mut void));
 
                     match &pointee {
@@ -212,21 +227,26 @@ impl Data {
                         None => {
                             pointee = Some(cur_pointee);
                         }
-                        _ => { }
+                        _ => {}
                     }
                 }
 
-                let pointee = pointee.unwrap_or_else(|| interop::ctype!(mut void));
-                interop::ctype_kind!([&{pointee}])
-            },
+                let pointee =
+                    pointee.unwrap_or_else(|| interop::ctype!(mut void));
+                interop::ctype_kind!([&{ pointee }])
+            }
             Data::Ptr(addr) => {
-                let pointee = symdb.get(*addr)
-                    .and_then(|sym| Some(Data::read(overlay, &sym)
-                        .ok()?
-                        .get_type(sym.sec_name, overlay, symdb)
-                    ))
+                let pointee = symdb
+                    .get(*addr)
+                    .and_then(|sym| {
+                        Some(Data::read(overlay, &sym).ok()?.get_type(
+                            sym.sec_name,
+                            overlay,
+                            symdb,
+                        ))
+                    })
                     .unwrap_or_else(|| interop::ctype!(mut void));
-                interop::ctype_kind!(&{pointee})
+                interop::ctype_kind!(&{ pointee })
             }
             Data::String(_) => interop::ctype_kind!([i8]),
             Data::Float(values) => {
@@ -235,12 +255,12 @@ impl Data {
                 } else {
                     interop::ctype_kind!([f32])
                 }
-            },
+            }
             Data::Double(_) => interop::ctype_kind!(f64),
             Data::Zero(_) => interop::ctype_kind!([i8]),
             Data::Evt(_) => interop::ctype_kind!([i32]),
             Data::Vec3(_) => interop::ctype_kind!([f32; 3]),
-            Data::NpcSetupInfo(_) => clsdata::NpcSetupInfo::get_type()
+            Data::NpcSetupInfo(_) => clsdata::NpcSetupInfo::get_type(),
         };
 
         interop::CType::new(sec_type.is_ro(), kind)
@@ -263,11 +283,9 @@ impl Data {
                 Data::PtrArr(addrs) => interop::dumps(addrs, &addr_ctx)?,
                 Data::Ptr(addr) => interop::dumps(addr, &addr_ctx)?,
                 Data::String(dt) => interop::dumps(dt, &())?,
-                Data::Float(dt) => {
-                    match dt.as_slice() {
-                        [single] => interop::dumps(single, &())?,
-                        dt => interop::dumps(dt, &())?,
-                    }
+                Data::Float(dt) => match dt.as_slice() {
+                    [single] => interop::dumps(single, &())?,
+                    dt => interop::dumps(dt, &())?,
                 },
                 Data::Double(dt) => interop::dumps(dt, &())?,
                 Data::Zero(dt) => interop::dumps(dt, &())?,
@@ -275,18 +293,14 @@ impl Data {
                     symdb,
                     area: overlay.backing().header().id.get(),
                     val: dt,
-                }.to_string(),
+                }
+                .to_string(),
                 Data::Vec3(dt) => interop::dumps(dt, &())?,
-                Data::NpcSetupInfo(dt) => {
-                    interop::dumps(dt, &symdb)?
-                },
+                Data::NpcSetupInfo(dt) => interop::dumps(dt, &symdb)?,
             })
         };
 
-        Ok(CodeLine::Variable {
-            vartype,
-            value,
-        })
+        Ok(CodeLine::Variable { vartype, value })
     }
 }
 
@@ -304,7 +318,8 @@ impl interop::Size for Data {
             Data::Evt(dat) => dat,
             Data::Vec3(dat) => dat,
             Data::NpcSetupInfo(dat) => dat,
-        }.len()
+        }
+        .len()
     }
 }
 
@@ -317,6 +332,7 @@ pub fn generate_line(
     let addr = ent.section_addr();
     let dat = Data::read(overlay, ent)?;
     let code_line = dat.to_code(ent.sec_name, overlay, symdb)?;
-    let symbol_name = symdb.symbol_name(sym::SymAddr::Rel(area_id, addr), false);
+    let symbol_name =
+        symdb.symbol_name(sym::SymAddr::Rel(area_id, addr), false);
     Ok(code_line.gen(symbol_name, ent.local))
 }

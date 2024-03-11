@@ -94,8 +94,9 @@ pub enum DataType {
 }
 
 impl serde::Serialize for DataType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
-        S: serde::Serializer
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
     {
         match self {
             DataType::Simple(st) => st.serialize(serializer),
@@ -105,19 +106,24 @@ impl serde::Serialize for DataType {
 }
 
 impl<'de> serde::Deserialize<'de> for DataType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where
-        D: serde::Deserializer<'de>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
     {
         struct ParseVariant;
         impl<'de> serde::de::Visitor<'de> for ParseVariant {
             type Value = DataType;
 
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
                 write!(f, "Expecting str")
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where
-                E: serde::de::Error
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
             {
                 Ok(match v.chars().next() {
                     None => DataType::Simple(SimpleType::Function),
@@ -167,8 +173,12 @@ impl RawSymEntry {
 }
 
 mod serde_opt_u32_hex {
-    pub(super) fn serialize<S>(val: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error> where
-        S: serde::Serializer
+    pub(super) fn serialize<S>(
+        val: &Option<u32>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
     {
         serializer.serialize_str(&match val {
             None => "".into(),
@@ -178,28 +188,31 @@ mod serde_opt_u32_hex {
 
     pub(super) fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<Option<u32>, D::Error> where
-        D: serde::Deserializer<'de>
+    ) -> Result<Option<u32>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
     {
         struct ParseU32;
         impl<'de> serde::de::Visitor<'de> for ParseU32 {
             type Value = Option<u32>;
 
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
                 write!(f, "Expecting str")
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where
-                E: serde::de::Error
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
             {
                 if v.is_empty() {
                     Ok(None)
                 } else {
-                    u32::from_str_radix(v, 16)
-                        .map(Some)
-                        .map_err(|e| {
-                            E::custom(format!("Unable to parse integer: {e}"))
-                        })
+                    u32::from_str_radix(v, 16).map(Some).map_err(|e| {
+                        E::custom(format!("Unable to parse integer: {e}"))
+                    })
                 }
             }
         }
@@ -208,28 +221,38 @@ mod serde_opt_u32_hex {
 }
 
 mod serde_u32_hex {
-    pub(super) fn serialize<S>(val: &u32, serializer: S) -> Result<S::Ok, S::Error> where
-        S: serde::Serializer
+    pub(super) fn serialize<S>(
+        val: &u32,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
     {
         serializer.serialize_str(&format!("{val:x}"))
     }
 
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error> where
-        D: serde::Deserializer<'de>
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
+    where
+        D: serde::Deserializer<'de>,
     {
         struct ParseU32;
         impl<'de> serde::de::Visitor<'de> for ParseU32 {
             type Value = u32;
 
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
                 write!(f, "Expecting str")
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where
-                E: serde::de::Error
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
             {
-                u32::from_str_radix(v, 16)
-                    .map_err(|e| E::custom(format!("Unable to parse integer: {e}")))
+                u32::from_str_radix(v, 16).map_err(|e| {
+                    E::custom(format!("Unable to parse integer: {e}"))
+                })
             }
         }
         deserializer.deserialize_str(ParseU32)
@@ -277,11 +300,8 @@ impl RawSymtab {
         let mut syms = Vec::new();
 
         let headers = rdr.headers()?.clone();
-        let replmap = HashMap::from([
-            ('（', "$op"),
-            ('）', "$cp"),
-            ('$', "$$"),
-        ]);
+        let replmap =
+            HashMap::from([('（', "$op"), ('）', "$cp"), ('$', "$$")]);
         let special_rel = HashSet::from([
             String::from("_unresolved"),
             "_prolog".into(),
@@ -348,8 +368,7 @@ impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
                     return Unknown;
                 }
                 match reloc.rtype {
-                    rel::RelocType::PPCAddr32
-                    | rel::RelocType::PPCAddr16 => (),
+                    rel::RelocType::PPCAddr32 | rel::RelocType::PPCAddr16 => (),
                     _ => return Unknown,
                 };
 
@@ -359,8 +378,7 @@ impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
                     Pointer(SymAddr::Rel(reloc.file, reloc.target))
                 }
             }
-            rel::Symbol::Partial
-            | rel::Symbol::Unknown => Unknown,
+            rel::Symbol::Partial | rel::Symbol::Unknown => Unknown,
         }
     }
 }
@@ -384,7 +402,10 @@ pub struct AddrDumpCtx<'a> {
 }
 
 impl<'a> AddrDumpCtx<'a> {
-    pub fn new(var_type: &'a interop::CType, symdb: &'a SymbolDatabase) -> Self {
+    pub fn new(
+        var_type: &'a interop::CType,
+        symdb: &'a SymbolDatabase,
+    ) -> Self {
         Self {
             var_type,
             symdb,
@@ -402,12 +423,12 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         ctx: &AddrDumpCtx<'a>,
     ) -> std::fmt::Result {
         let cast = ctx.cached.get_or_init(|| {
-            let pointee_tp = ctx.var_type
-                .get_pointee()
-                .expect("should have pointee");
+            let pointee_tp =
+                ctx.var_type.get_pointee().expect("should have pointee");
             match &pointee_tp.kind {
-                interop::CTypeKind::Prim(_)
-                | interop::CTypeKind::TDef(_) => "".into(),
+                interop::CTypeKind::Prim(_) | interop::CTypeKind::TDef(_) => {
+                    "".into()
+                }
                 interop::CTypeKind::Array(_, _)
                 | interop::CTypeKind::PtrArray(_, _)
                 | interop::CTypeKind::Ptr(_) => format!("({pointee_tp}) "),
@@ -417,7 +438,6 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, true))
     }
 }
-
 
 #[derive(Default, Clone)]
 pub struct SymbolDatabase {
@@ -443,10 +463,13 @@ impl SymbolDatabase {
                     Some(a) => *a,
                     None => continue,
                 };
-                SymAddr::Rel(area, rel::SectionAddr {
-                    sect: sym.sec_id,
-                    offset: sym.sec_offset,
-                })
+                SymAddr::Rel(
+                    area,
+                    rel::SectionAddr {
+                        sect: sym.sec_id,
+                        offset: sym.sec_offset,
+                    },
+                )
             };
 
             ret.add_symbol(addr, sym.name.clone(), Some(sym));
@@ -477,7 +500,7 @@ impl SymbolDatabase {
                     .entry(area)
                     .or_insert_with(BTreeSet::new)
                     .insert(saddr);
-            },
+            }
         }
         if let Some(ent) = entry {
             self.raw_ent.insert(addr, ent);
@@ -485,9 +508,7 @@ impl SymbolDatabase {
     }
 
     pub fn get(&self, addr: SymAddr) -> Option<RawSymEntry> {
-        self.raw_ent
-            .get(&addr)
-            .map(Clone::clone)
+        self.raw_ent.get(&addr).map(Clone::clone)
     }
 
     pub fn name_of(&self, addr: SymAddr) -> Option<&str> {
@@ -495,18 +516,16 @@ impl SymbolDatabase {
     }
 
     pub fn symbol_name(&self, addr: SymAddr, is_ref: bool) -> String {
-        let ref_sym = if is_ref {
-            "&"
-        } else {
-            ""
-        };
+        let ref_sym = if is_ref { "&" } else { "" };
         match self.name_of(addr) {
             Some(name) => format!("{ref_sym}{name}"),
             None => match addr {
                 SymAddr::Dol(0) => format!("NULL"),
                 SymAddr::Dol(addr) => format!("{ref_sym}lbl_{addr:08x}"),
-                SymAddr::Rel(sect, saddr) => format!("{ref_sym}{}_sect_{sect}", saddr.var_name()),
-            }
+                SymAddr::Rel(sect, saddr) => {
+                    format!("{ref_sym}{}_sect_{sect}", saddr.var_name())
+                }
+            },
         }
     }
 
@@ -524,14 +543,16 @@ impl SymbolDatabase {
             .filter_map(|a| self.raw_ent.get(&SymAddr::Dol(*a)))
     }
 
-    pub fn rel_iter<'e>(&'e self, area: u32) -> impl Iterator<Item = &'e RawSymEntry> {
+    pub fn rel_iter<'e>(
+        &'e self,
+        area: u32,
+    ) -> impl Iterator<Item = &'e RawSymEntry> {
         self.by_area
             .get(&area)
             .unwrap_or(&self.null)
             .iter()
             .filter_map(move |addr| {
-                self.raw_ent
-                    .get(&SymAddr::Rel(area, *addr))
+                self.raw_ent.get(&SymAddr::Rel(area, *addr))
             })
     }
 }
@@ -552,11 +573,7 @@ pub struct SymContext<'r, T> {
 }
 
 impl<'r, T> SymContext<'r, T> {
-    pub fn new(
-        symdb: &'r SymbolDatabase,
-        area: u32,
-        val: &'r T,
-    ) -> Self {
+    pub fn new(symdb: &'r SymbolDatabase, area: u32, val: &'r T) -> Self {
         Self { symdb, area, val }
     }
 }
@@ -577,4 +594,3 @@ impl<T: std::fmt::Display> SymDisplay for T {
         std::fmt::Display::fmt(self, f)
     }
 }
-

@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::bail;
-use clap::{Subcommand, Parser};
+use clap::{Parser, Subcommand};
 
 extern crate num_derive;
 
@@ -18,9 +18,9 @@ mod error;
 mod evt;
 mod gen;
 mod msg;
-mod sym;
 mod reader;
 mod rel;
+mod sym;
 mod utils;
 
 #[derive(Parser)]
@@ -68,7 +68,7 @@ enum Command {
 #[derive(Subcommand)]
 enum MessageCommand {
     #[command(subcommand)]
-    Files(MessageFilesCommands)
+    Files(MessageFilesCommands),
 }
 
 #[derive(Subcommand)]
@@ -78,7 +78,7 @@ enum MessageFilesCommands {
     Select {
         /// The file id for the particular message
         id: String,
-    }
+    },
 }
 
 #[derive(Subcommand)]
@@ -103,7 +103,15 @@ enum RelCommands {
 enum HandlerType {
     ByByte(Box<dyn Fn(Option<Vec<u8>>, Vec<u8>) -> anyhow::Result<Vec<u8>>>),
     ByString(Box<dyn Fn(Option<String>, String) -> anyhow::Result<String>>),
-    ByFile(Box<dyn for<'a> Fn(Option<&'a Path>, &'a Path, &'a Path) -> anyhow::Result<()>>)
+    ByFile(
+        Box<
+            dyn for<'a> Fn(
+                Option<&'a Path>,
+                &'a Path,
+                &'a Path,
+            ) -> anyhow::Result<()>,
+        >,
+    ),
 }
 
 struct PatchHandler {
@@ -113,8 +121,16 @@ struct PatchHandler {
 }
 
 impl PatchHandler {
-    fn new(ext_pattern: String, ext_repl: String, handler: HandlerType) -> Self {
-        Self { ext_pattern, ext_repl, handler }
+    fn new(
+        ext_pattern: String,
+        ext_repl: String,
+        handler: HandlerType,
+    ) -> Self {
+        Self {
+            ext_pattern,
+            ext_repl,
+            handler,
+        }
     }
 }
 
@@ -134,10 +150,7 @@ fn copy_dir_all(
                 patch_handlers,
             )?;
         } else {
-            let filename = entry
-                .file_name()
-                .to_string_lossy()
-                .to_string();
+            let filename = entry.file_name().to_string_lossy().to_string();
             for hdr in patch_handlers {
                 if let Some(base) = filename.strip_suffix(&hdr.ext_pattern) {
                     // We found a patch handler match
@@ -158,7 +171,7 @@ fn copy_dir_all(
                         HandlerType::ByByte(hdr) => {
                             let base = match base_path {
                                 None => None,
-                                Some(path) => Some(fs::read(path)?)
+                                Some(path) => Some(fs::read(path)?),
                             };
                             let patch = fs::read(entry.path())?;
                             fs::write(
@@ -170,7 +183,7 @@ fn copy_dir_all(
                         HandlerType::ByString(hdr) => {
                             let base = match base_path {
                                 None => None,
-                                Some(path) => Some(fs::read_to_string(path)?)
+                                Some(path) => Some(fs::read_to_string(path)?),
                             };
                             let patch = fs::read_to_string(entry.path())?;
                             fs::write(
@@ -227,10 +240,7 @@ impl Env {
         }
 
         if !game_dir.join("msg").join(&cli.lang).is_dir() {
-            bail!(
-                "unable to find messages for language {}",
-                &cli.lang,
-            );
+            bail!("unable to find messages for language {}", &cli.lang,);
         }
 
         Ok(Self {
@@ -266,7 +276,6 @@ impl Env {
     pub fn msg_dir(&self) -> PathBuf {
         self.game_dir().join("msg").join(&self.lang)
     }
-
 }
 
 fn message_cmd(env: &Env, cmd: MessageCommand) -> Result<(), anyhow::Error> {
@@ -276,14 +285,16 @@ fn message_cmd(env: &Env, cmd: MessageCommand) -> Result<(), anyhow::Error> {
                 let mut files = BTreeSet::new();
                 println!("{}", env.msg_dir().to_string_lossy());
                 for file in fs::read_dir(env.msg_dir())? {
-                    files.insert(file?.file_name().to_string_lossy().to_string());
+                    files.insert(
+                        file?.file_name().to_string_lossy().to_string(),
+                    );
                 }
                 // TODO: list files that would be patched
                 for file in files {
                     println!("{}", file.strip_suffix(".txt").unwrap_or(&file));
                 }
                 Ok(())
-            },
+            }
             MessageFilesCommands::Select { id: _id } => todo!(),
         },
     }
@@ -299,13 +310,15 @@ fn build_cmd(env: &Env) -> Result<(), anyhow::Error> {
     }
 
     copy_dir_all(env.base_dir(), env.patched_dir(), &[])?;
-    copy_dir_all(env.mod_dir(), env.patched_dir(), &[
-        PatchHandler::new(
+    copy_dir_all(
+        env.mod_dir(),
+        env.patched_dir(),
+        &[PatchHandler::new(
             ".txt.msgpatch".into(),
             ".txt".into(),
             HandlerType::ByByte(Box::new(&msg::patch_msgfile)),
-        ),
-    ])?;
+        )],
+    )?;
 
     Ok(())
 }
@@ -330,7 +343,7 @@ fn main() -> Result<(), anyhow::Error> {
                     Ok(())
                 }
             }
-        },
+        }
         Command::Rel { file, cmd } => {
             let file_parts = file
                 .rsplitn(2, '/')
@@ -357,9 +370,7 @@ fn main() -> Result<(), anyhow::Error> {
                     area_map.insert(area_name.into(), rel.header().id.get());
                     let symdb = sym::SymbolDatabase::new(
                         area_map,
-                        sym::RawSymtab::from_reader(
-                            File::open(symdb)?
-                        )?
+                        sym::RawSymtab::from_reader(File::open(symdb)?)?,
                     );
                     let parser = evt::EvtParser::new(&overlay);
                     parser.search_evt_scripts(&symdb)?;
@@ -378,9 +389,7 @@ fn main() -> Result<(), anyhow::Error> {
                     area_map.insert(area_name.into(), area_id);
                     let symdb = sym::SymbolDatabase::new(
                         area_map,
-                        sym::RawSymtab::from_reader(
-                            File::open(symdb)?
-                        )?
+                        sym::RawSymtab::from_reader(File::open(symdb)?)?,
                     );
 
                     let mut codes = HashMap::new();
@@ -391,13 +400,15 @@ fn main() -> Result<(), anyhow::Error> {
                         for ns in s.namespace.split(" ") {
                             if ns.ends_with(".o") {
                                 file = format!("{}.c", &ns[..ns.len() - 2]);
-                                file_include = format!("{}.h", &ns[..ns.len() - 2]);
+                                file_include =
+                                    format!("{}.h", &ns[..ns.len() - 2]);
                                 break;
                             }
                         }
                         let def = gen::generate_line(&overlay, &symdb, s)?;
 
-                        let code = codes.entry(file).or_insert_with(String::new);
+                        let code =
+                            codes.entry(file).or_insert_with(String::new);
                         code.push_str(&def.definition);
                         code.push_str("\n");
 
@@ -429,6 +440,6 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
             Ok(())
-        },
+        }
     }
 }

@@ -49,10 +49,7 @@ impl<'r, 'b> interop::CReader<sym::SymAddr> for Reader<'r, 'b> {
     type Error = Error;
 
     fn error_expected_eof(&self) -> Self::Error {
-        error!(ReadUnderflow(
-            self.rel_pos(),
-            self.size,
-        ))
+        error!(ReadUnderflow(self.rel_pos(), self.size,))
     }
 
     fn error_complex_symbol(&self) -> Self::Error {
@@ -104,7 +101,8 @@ impl<'r, 'b> interop::CReader<sym::SymAddr> for Reader<'r, 'b> {
     }
 
     fn skip(&mut self, cnt: usize) -> Result<(), Self::Error> {
-        let cnt: u32 = cnt.try_into()
+        let cnt: u32 = cnt
+            .try_into()
             .map_err(|_| error!(ReadOverflow(u32::MAX, self.size)))?;
         if self.size - self.rel_pos() < cnt {
             bail!(ReadOverflow(self.rel_pos() + 1, self.size));
@@ -159,4 +157,3 @@ impl<'r, 'b> Reader<'r, 'b> {
         Ok(self.overlay.read(current)?)
     }
 }
-

@@ -1,10 +1,5 @@
 use std::{
-    collections::{
-        btree_map as tm,
-        hash_map as hm,
-        BTreeMap,
-        HashMap,
-    },
+    collections::{btree_map as tm, hash_map as hm, BTreeMap, HashMap},
     mem::size_of,
 };
 
@@ -16,7 +11,6 @@ use crate::{mk_err_wrapper, utils::assert_sane_size};
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
-
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorType {
@@ -135,7 +129,7 @@ pub struct SectionHeader {
 
 impl SectionHeader {
     /// Offset from the beginning of the REL to the section. If this is None, the section is an
-    /// uninitialized section (i.e. .bss). 
+    /// uninitialized section (i.e. .bss).
     pub fn offset(&self) -> Option<u32> {
         let val = self.offset.get() & !1;
         if val == 0 {
@@ -227,7 +221,7 @@ impl ImpEntry {
     fn id(&self) -> u32 {
         self.id.get()
     }
-    
+
     /// Offset from the beginning of the REL to the relocation data.
     fn offset(&self) -> u32 {
         self.offset.get()
@@ -235,8 +229,7 @@ impl ImpEntry {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[derive(FromPrimitive)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, FromPrimitive)]
 pub enum RelocType {
     /// Do nothing. Skip this entry.
     PPCNone = 0,
@@ -310,14 +303,8 @@ pub enum RelocType {
 #[derive(Debug)]
 pub enum RelocAction {
     None,
-    Write32 {
-        val: u32,
-        mask: u32,
-    },
-    Write16 {
-        val: u16,
-        mask: u16,
-    },
+    Write32 { val: u32, mask: u32 },
+    Write16 { val: u16, mask: u16 },
     Sect,
     End,
 }
@@ -364,7 +351,7 @@ impl RelocType {
         const MASK_24: u32 = 0x03fffffc;
         const MASK_16: u16 = 0xffff;
         const MASK_14_32: u32 = 0x0000fffc;
-        const BIT_TAKEN: u32 = 1<<21;
+        const BIT_TAKEN: u32 = 1 << 21;
         const SHF_HI: usize = 16;
         const ADJ: u32 = 0x8000;
         Some(match self {
@@ -440,7 +427,7 @@ pub struct RelocEntry {
 }
 
 impl RelocEntry {
-    /// Offset in bytes from the previous relocation to this one. If this is 
+    /// Offset in bytes from the previous relocation to this one. If this is
     /// the first relocation in the section, this is relative to the section start.
     pub fn offset(&self) -> u16 {
         self.offset.get()
@@ -455,8 +442,7 @@ impl RelocEntry {
 
     /// The relocation type.
     pub fn rtype(&self) -> Result<RelocType, u8> {
-        RelocType::from_u8(self.type_)
-            .ok_or(self.type_)
+        RelocType::from_u8(self.type_).ok_or(self.type_)
     }
 
     /// Offset in bytes of the symbol to relocate against, relative to the start of its section.
@@ -502,21 +488,22 @@ fn slice_from_bytes<T: Pod>(data: &[u8], offset: usize, len: Size) -> &[T] {
 
 impl<'b> RelFile<'b> {
     pub fn new(data: &'b [u8]) -> Self {
-        let header: RelHeader = bytemuck::pod_read_unaligned(
-            &data[0..size_of::<RelHeader>()]
-        );
+        let header: RelHeader =
+            bytemuck::pod_read_unaligned(&data[0..size_of::<RelHeader>()]);
 
         let sections = slice_from_bytes(
             data,
             header.section_info_offset.get() as usize,
             Size::Length(header.num_sections.get() as usize),
-        ).to_vec();
+        )
+        .to_vec();
 
         let imp: Vec<ImpEntry> = slice_from_bytes(
             data,
             header.imp_offset.get() as usize,
             Size::Bytes(header.imp_size.get() as usize),
-        ).to_vec();
+        )
+        .to_vec();
 
         let mut relocs = HashMap::new();
         let mut reloc_off = header.rel_offset.get() as usize;
@@ -528,7 +515,7 @@ impl<'b> RelFile<'b> {
             };
             loop {
                 let ent: RelocEntry = *bytemuck::from_bytes(
-                    &data[reloc_off..reloc_off + size_of::<RelocEntry>()]
+                    &data[reloc_off..reloc_off + size_of::<RelocEntry>()],
                 );
                 tbl.push(ent);
                 reloc_off += size_of::<RelocEntry>();
@@ -560,9 +547,11 @@ impl<'b> RelFile<'b> {
             .flat_map(|(id, relocs)| relocs.into_iter().map(move |r| (*id, r)))
     }
 
-    pub fn relocations_for_file(&self, id: u32) -> impl Iterator<Item = &RelocEntry> {
-        self.relocs.get(&id)
-            .map_or_else(|| [].iter(), |r| r.iter())
+    pub fn relocations_for_file(
+        &self,
+        id: u32,
+    ) -> impl Iterator<Item = &RelocEntry> {
+        self.relocs.get(&id).map_or_else(|| [].iter(), |r| r.iter())
     }
 
     pub fn imp_tbl(&self) -> impl Iterator<Item = &ImpEntry> {
@@ -574,28 +563,33 @@ impl<'b> RelFile<'b> {
         addr: SectionAddr,
         size: u32,
     ) -> Result<&[u8], Error> {
-        let sect = self.sections
+        let sect = self
+            .sections
             .get(usize::from(addr.sect))
             .ok_or_else(|| error!(BadSection(addr.sect)))?;
 
-        let sect_offset = sect
-            .offset()
-            .ok_or_else(|| error!(BadSection(addr.sect)))? as usize;
+        let sect_offset =
+            sect.offset().ok_or_else(|| error!(BadSection(addr.sect)))?
+                as usize;
 
-        let end = addr.offset
+        let end = addr
+            .offset
             .checked_add(size)
             .ok_or_else(|| error!(BadOffset(addr.offset)))?;
 
         if end > sect.length() {
             Err(error!(BadOffset(addr.offset)))
         } else {
-            Ok(&self.data[sect_offset + addr.offset as usize..sect_offset + end as usize])
+            Ok(&self.data[sect_offset + addr.offset as usize
+                ..sect_offset + end as usize])
         }
     }
 
     pub fn read<T: Pod>(&self, addr: SectionAddr) -> Result<T, Error> {
         assert_sane_size::<T>();
-        Ok(bytemuck::pod_read_unaligned(self.slice_of(addr, size_of::<T>() as u32)?))
+        Ok(bytemuck::pod_read_unaligned(
+            self.slice_of(addr, size_of::<T>() as u32)?,
+        ))
     }
 
     pub fn dump_headers(&self) {
@@ -661,7 +655,7 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
     pub fn new(backing: &'r RelFile<'b>) -> Self {
         Self {
             backing,
-            relocs: BTreeMap::new()
+            relocs: BTreeMap::new(),
         }
     }
 
@@ -676,26 +670,32 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
     ) -> Result<(), Error> {
         let mut cur_addr: Option<SectionAddr> = None;
         for (file, rel) in self.backing.relocations() {
-            let rtype = rel.rtype()
-                    .map_err(|rt| error!(InvalidRelocType(rt)))?;
+            let rtype =
+                rel.rtype().map_err(|rt| error!(InvalidRelocType(rt)))?;
             let action = if has_dol && file == 0 {
-                rtype.eval(rel.addend(), None)
-                    .map_or_else(
-                        || SymbolicActions::RelocSymbol(rtype),
-                        SymbolicActions::Concrete,
-                    )
+                rtype.eval(rel.addend(), None).map_or_else(
+                    || SymbolicActions::RelocSymbol(rtype),
+                    SymbolicActions::Concrete,
+                )
             } else if let Some(base) = resolved.get(&(file, rel.section())) {
-                rtype.eval(base + rel.addend(), None)
-                    .map_or_else(
-                        || SymbolicActions::RelocSymbol(rtype),
-                        SymbolicActions::Concrete,
-                    )
+                rtype.eval(base + rel.addend(), None).map_or_else(
+                    || SymbolicActions::RelocSymbol(rtype),
+                    SymbolicActions::Concrete,
+                )
             } else {
                 match rtype {
-                    RelocType::PPCNone => SymbolicActions::Concrete(RelocAction::None),
-                    RelocType::RvlNone => SymbolicActions::Concrete(RelocAction::None),
-                    RelocType::RvlSect => SymbolicActions::Concrete(RelocAction::Sect),
-                    RelocType::RvlEnd => SymbolicActions::Concrete(RelocAction::End),
+                    RelocType::PPCNone => {
+                        SymbolicActions::Concrete(RelocAction::None)
+                    }
+                    RelocType::RvlNone => {
+                        SymbolicActions::Concrete(RelocAction::None)
+                    }
+                    RelocType::RvlSect => {
+                        SymbolicActions::Concrete(RelocAction::Sect)
+                    }
+                    RelocType::RvlEnd => {
+                        SymbolicActions::Concrete(RelocAction::End)
+                    }
                     r => SymbolicActions::RelocSymbol(r),
                 }
             };
@@ -704,7 +704,7 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
 
             match action {
                 SymbolicActions::Concrete(action) => match action {
-                    RelocAction::None => {},
+                    RelocAction::None => {}
                     RelocAction::Write32 { val, mask } => {
                         let addr = cur_addr.ok_or_else(|| error!(NoSection))?;
                         if mask == !0 {
@@ -712,9 +712,16 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                         } else if mask != 0 {
                             let old_val = self.read_32(addr)?;
                             if let Symbol::Value(old_val) = old_val {
-                                self.write_32(addr, (old_val & !mask) | (val & mask));
+                                self.write_32(
+                                    addr,
+                                    (old_val & !mask) | (val & mask),
+                                );
                             } else {
-                                self.write_reloc(addr, None, RelocType::PPCAddr32)?;
+                                self.write_reloc(
+                                    addr,
+                                    None,
+                                    RelocType::PPCAddr32,
+                                )?;
                             }
                         }
                     }
@@ -725,9 +732,16 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                         } else if mask != 0 {
                             let old_val = self.read_16(addr)?;
                             if let Symbol::Value(old_val) = old_val {
-                                self.write_16(addr, (old_val & !mask) | (val & mask));
+                                self.write_16(
+                                    addr,
+                                    (old_val & !mask) | (val & mask),
+                                );
                             } else {
-                                self.write_reloc(addr, None, RelocType::PPCAddr16)?;
+                                self.write_reloc(
+                                    addr,
+                                    None,
+                                    RelocType::PPCAddr16,
+                                )?;
                             }
                         }
                     }
@@ -738,13 +752,17 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                         cur_addr = None;
                         continue;
                     }
-                }
+                },
                 SymbolicActions::RelocSymbol(rtype) => {
                     let addr = cur_addr.ok_or_else(|| error!(NoSection))?;
-                    self.write_reloc(addr, Some((file, SectionAddr::new(
-                        rel.section(),
-                        rel.addend(),
-                    ))), rtype)?;
+                    self.write_reloc(
+                        addr,
+                        Some((
+                            file,
+                            SectionAddr::new(rel.section(), rel.addend()),
+                        )),
+                        rtype,
+                    )?;
                 }
             }
         }
@@ -767,7 +785,7 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                 }
                 // Oops this shouldn't have been removed! Also reached
                 // termination point
-                s@Symbol::Value(_) => {
+                s @ Symbol::Value(_) => {
                     ent.insert(s);
                     break;
                 }
@@ -784,7 +802,9 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                     ent.insert(Symbol::Unknown);
                     match ent.get() {
                         Symbol::Rel(_) | Symbol::Partial => invalidating = true,
-                        Symbol::Value(_) | Symbol::Unknown => invalidating = false,
+                        Symbol::Value(_) | Symbol::Unknown => {
+                            invalidating = false
+                        }
                     }
                 }
                 tm::Entry::Vacant(ent) => {
@@ -804,19 +824,23 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
     ) -> Result<(), Error> {
         let orig = match rtype.size() {
             0 => None,
-            2 => if let Symbol::Value(v) = self.read_16(addr_site)? {
-                Some(RelocBacking::Val16(v & !rtype.mask() as u16))
-            } else {
-                None
-            },
-            4 => if let Symbol::Value(v) = self.read_32(addr_site)? {
-                Some(RelocBacking::Val32(v & !rtype.mask()))
-            } else {
-                None
-            },
+            2 => {
+                if let Symbol::Value(v) = self.read_16(addr_site)? {
+                    Some(RelocBacking::Val16(v & !rtype.mask() as u16))
+                } else {
+                    None
+                }
+            }
+            4 => {
+                if let Symbol::Value(v) = self.read_32(addr_site)? {
+                    Some(RelocBacking::Val32(v & !rtype.mask()))
+                } else {
+                    None
+                }
+            }
             _ => unreachable!(),
         };
-        
+
         self.invalidate_write(addr_site, rtype.size());
 
         let sym = match reloc {
@@ -844,10 +868,7 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
 
         let data = bytemuck::bytes_of(val);
         for i in 0..data.len() {
-            self.relocs.insert(
-                addr + i as u32,
-                Symbol::Value(data[i])
-            );
+            self.relocs.insert(addr + i as u32, Symbol::Value(data[i]));
         }
     }
 
@@ -865,7 +886,8 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
         Ok(match self.relocs.get(&addr) {
             // Assume all relocations are concrete values
             None | Some(Symbol::Value(_)) => {
-                let mut data = self.backing
+                let mut data = self
+                    .backing
                     .slice_of(addr, size_of::<T>() as u32)?
                     .to_vec();
                 for i in 0..data.len() {
@@ -893,7 +915,10 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                 // Ensure that all the rest of the markers following this
                 // relocation entry is in fact just UNK markers
                 for i in 1..size_of::<T>() {
-                    if !matches!(self.relocs.get(&(addr + i as u32)), Some(Symbol::Partial)) {
+                    if !matches!(
+                        self.relocs.get(&(addr + i as u32)),
+                        Some(Symbol::Partial)
+                    ) {
                         return Ok(Symbol::Unknown);
                     }
                 }

@@ -1,8 +1,5 @@
+use std::{backtrace::Backtrace, error::Error as StdError};
 use thiserror::Error;
-use std::{
-    backtrace::Backtrace,
-    error::Error as StdError,
-};
 
 #[derive(Debug, Error)]
 #[error("{tp}")]
@@ -18,7 +15,7 @@ struct ErrorImpl<T: StdError> {
 pub struct Error<T: StdError>(
     #[source]
     #[backtrace]
-    Box<ErrorImpl<T>>
+    Box<ErrorImpl<T>>,
 );
 
 impl<T: StdError> Error<T> {

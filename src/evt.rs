@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::BTreeMap,
-    sync::LazyLock,
-};
+use std::{cell::RefCell, collections::BTreeMap, sync::LazyLock};
 
 use interop::CReader;
 use num::FromPrimitive;
@@ -31,14 +27,14 @@ macro_rules! error {
     ($reader:expr, $err:expr) => {{
         use ErrorType::*;
         $reader.error_custom($err.to_string())
-    }}
+    }};
 }
 
 macro_rules! bail {
     ($reader:expr, $err:expr) => {{
         use ErrorType::*;
-        return Err($reader.error_custom($err.to_string()))
-    }}
+        return Err($reader.error_custom($err.to_string()));
+    }};
 }
 
 #[derive(Clone, Copy)]
@@ -70,21 +66,22 @@ const FLOAT_BASE: i32 = if cfg!(feature = "spm") {
 } else {
     -230000000
 };
-static ZONES_DESC: LazyLock<BTreeMap<i32, ExpressionType>> = LazyLock::new(|| {
-    use ExpressionType::*;
-    let mut ret = BTreeMap::new();
-    ret.insert(i32::MIN, Address);
-    ret.insert(ADDR_BASE + 1, Float);
+static ZONES_DESC: LazyLock<BTreeMap<i32, ExpressionType>> =
+    LazyLock::new(|| {
+        use ExpressionType::*;
+        let mut ret = BTreeMap::new();
+        ret.insert(i32::MIN, Address);
+        ret.insert(ADDR_BASE + 1, Float);
 
-    let mut bound = UF_BASE;
-    for et in [UF, UW, GSW, LSW, GSWF, LSWF, GF, LF, GW, LW] {
-        ret.insert(bound, et);
-        ret.insert(bound + ZONE_EXTENT + 1, Immediate);
-        bound += ZONE_EXTENT * 2;
-    }
+        let mut bound = UF_BASE;
+        for et in [UF, UW, GSW, LSW, GSWF, LSWF, GF, LF, GW, LW] {
+            ret.insert(bound, et);
+            ret.insert(bound + ZONE_EXTENT + 1, Immediate);
+            bound += ZONE_EXTENT * 2;
+        }
 
-    ret
-});
+        ret
+    });
 
 #[derive(Clone, Copy)]
 pub enum ExprOverride {
@@ -120,7 +117,8 @@ impl Expr {
             ExprOverride::Raw => return Self::Immediate(value, true),
         };
 
-        let (base, et) = ZONES_DESC.range(..=value)
+        let (base, et) = ZONES_DESC
+            .range(..=value)
             .last()
             .expect("There should be a zone at the min i32 value");
         let adj_value = value.wrapping_sub(*base) as u32;
@@ -171,11 +169,13 @@ impl sym::SymDisplay for Expr {
             Expr::LF(id) => write!(f, "LF({id})"),
             Expr::GW(id) => write!(f, "GW({id})"),
             Expr::LW(id) => write!(f, "LW({id})"),
-            Expr::Immediate(val, is_hex) => if *is_hex {
-                write!(f, "0x{:08x}", *val as u32)
-            } else {
-                write!(f, "{val}")
-            },
+            Expr::Immediate(val, is_hex) => {
+                if *is_hex {
+                    write!(f, "0x{:08x}", *val as u32)
+                } else {
+                    write!(f, "{val}")
+                }
+            }
         }
     }
 }
@@ -207,126 +207,126 @@ pub enum OpcodeIndent {
 #[derive(FromPrimitive, Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum ScriptOpcode {
-	InternalFetch = 0,
-	ScriptEnd,
-	Return,
-	Label,
-	Goto,
-	LoopBegin,
-	LoopIterate,
-	LoopBreak,
-	LoopContinue,
-	WaitFrames,
-	WaitMS,
-	WaitUntil,
-	IfStringEqual,
-	IfStringNotEqual,
-	IfStringLess,
-	IfStringGreater,
-	IfStringLessEqual,
-	IfStringGreaterEqual,
-	IfFloatEqual,
-	IfFloatNotEqual,
-	IfFloatLess,
-	IfFloatGreater,
-	IfFloatLessEqual,
-	IfFloatGreaterEqual,
-	IfIntEqual,
-	IfIntNotEqual,
-	IfIntLess,
-	IfIntGreater,
-	IfIntLessEqual,
-	IfIntGreaterEqual,
-	IfBitsSet,
-	IfBitsClear,
-	Else,
-	EndIf,
-	SwitchExpr,
-	SwitchRaw,
-	CaseIntEqual,
-	CaseIntNotEqual,
-	CaseIntLess,
-	CaseIntGreater,
-	CaseIntLessEqual,
-	CaseIntGreaterEqual,
-	CaseDefault,
-	CaseIntEqualAny,
-	CaseIntNotEqualAll,
-	CaseBitsSet,
-	EndMultiCase,
-	CaseIntRange,
-	SwitchBreak,
-	EndSwitch,
-	SetExprIntToExprInt,
-	SetExprIntToRaw,
-	SetExprFloatToExprFloat,
-	AddInt,
-	SubtractInt,
-	MultiplyInt,
-	DivideInt,
-	ModuloInt,
-	AddFloat,
-	SubtractFloat,
-	MultiplyFloat,
-	DivideFloat,
-	MemOpSetBaseInt,
-	MemOpReadInt,
-	MemOpReadInt2,
-	MemOpReadInt3,
-	MemOpReadInt4,
-	MemOpReadIntIndexed,
-	MemOpSetBaseFloat,
-	MemOpReadFloat,
-	MemOpReadFloat2,
-	MemOpReadFloat3,
-	MemOpReadFloat4,
-	MemOpReadFloatIndexed,
-  #[cfg(feature = "spm")]
-	ClampInt,
-	SetUserWordBase,
-	SetUserFlagBase,
-	AllocateUserWordBase,
-	AndExpr,
-	AndRaw,
-	OrExpr,
-	OrRaw,
-	ConvertMSToFrames,
-	ConvertFramesToMS,
-	StoreIntToPtr,
-	StoreFloatToPtr,
-	LoadIntFromPtr,
-	LoadFloatFromPtr,
-	StoreIntToPtrExpr,
-	StoreFloatToPtrExpr,
-	LoadIntFromPtrExpr,
-	LoadFloatFromPtrExpr,
-	CallCppSync,
-	CallScriptAsync,
-	CallScriptAsyncSaveTID,
-	CallScriptSync,
-	TerminateThread,
-	Jump,
-	SetThreadPriority,
-	SetThreadTimeQuantum,
-	SetThreadTypeMask,
-	ThreadSuspendTypes,
-	ThreadResumeTypes,
-	ThreadSuspendTypesOther,
-	ThreadResumeTypesOther,
-	ThreadSuspendTID,
-	ThreadResumeTID,
-	CheckThreadRunning,
-	ThreadStart,
-	ThreadStartSaveTID,
-	ThreadEnd,
-	ThreadChildStart,
-	ThreadChildStartSaveTID,
-	ThreadChildEnd,
-	DebugOutputString,
-	DebugUnk1,
-	DebugExprToString,
-	DebugUnk2,
-	DebugUnk3,
+    InternalFetch = 0,
+    ScriptEnd,
+    Return,
+    Label,
+    Goto,
+    LoopBegin,
+    LoopIterate,
+    LoopBreak,
+    LoopContinue,
+    WaitFrames,
+    WaitMS,
+    WaitUntil,
+    IfStringEqual,
+    IfStringNotEqual,
+    IfStringLess,
+    IfStringGreater,
+    IfStringLessEqual,
+    IfStringGreaterEqual,
+    IfFloatEqual,
+    IfFloatNotEqual,
+    IfFloatLess,
+    IfFloatGreater,
+    IfFloatLessEqual,
+    IfFloatGreaterEqual,
+    IfIntEqual,
+    IfIntNotEqual,
+    IfIntLess,
+    IfIntGreater,
+    IfIntLessEqual,
+    IfIntGreaterEqual,
+    IfBitsSet,
+    IfBitsClear,
+    Else,
+    EndIf,
+    SwitchExpr,
+    SwitchRaw,
+    CaseIntEqual,
+    CaseIntNotEqual,
+    CaseIntLess,
+    CaseIntGreater,
+    CaseIntLessEqual,
+    CaseIntGreaterEqual,
+    CaseDefault,
+    CaseIntEqualAny,
+    CaseIntNotEqualAll,
+    CaseBitsSet,
+    EndMultiCase,
+    CaseIntRange,
+    SwitchBreak,
+    EndSwitch,
+    SetExprIntToExprInt,
+    SetExprIntToRaw,
+    SetExprFloatToExprFloat,
+    AddInt,
+    SubtractInt,
+    MultiplyInt,
+    DivideInt,
+    ModuloInt,
+    AddFloat,
+    SubtractFloat,
+    MultiplyFloat,
+    DivideFloat,
+    MemOpSetBaseInt,
+    MemOpReadInt,
+    MemOpReadInt2,
+    MemOpReadInt3,
+    MemOpReadInt4,
+    MemOpReadIntIndexed,
+    MemOpSetBaseFloat,
+    MemOpReadFloat,
+    MemOpReadFloat2,
+    MemOpReadFloat3,
+    MemOpReadFloat4,
+    MemOpReadFloatIndexed,
+    #[cfg(feature = "spm")]
+    ClampInt,
+    SetUserWordBase,
+    SetUserFlagBase,
+    AllocateUserWordBase,
+    AndExpr,
+    AndRaw,
+    OrExpr,
+    OrRaw,
+    ConvertMSToFrames,
+    ConvertFramesToMS,
+    StoreIntToPtr,
+    StoreFloatToPtr,
+    LoadIntFromPtr,
+    LoadFloatFromPtr,
+    StoreIntToPtrExpr,
+    StoreFloatToPtrExpr,
+    LoadIntFromPtrExpr,
+    LoadFloatFromPtrExpr,
+    CallCppSync,
+    CallScriptAsync,
+    CallScriptAsyncSaveTID,
+    CallScriptSync,
+    TerminateThread,
+    Jump,
+    SetThreadPriority,
+    SetThreadTimeQuantum,
+    SetThreadTypeMask,
+    ThreadSuspendTypes,
+    ThreadResumeTypes,
+    ThreadSuspendTypesOther,
+    ThreadResumeTypesOther,
+    ThreadSuspendTID,
+    ThreadResumeTID,
+    CheckThreadRunning,
+    ThreadStart,
+    ThreadStartSaveTID,
+    ThreadEnd,
+    ThreadChildStart,
+    ThreadChildStartSaveTID,
+    ThreadChildEnd,
+    DebugOutputString,
+    DebugUnk1,
+    DebugExprToString,
+    DebugUnk2,
+    DebugUnk3,
 }
 
 impl std::fmt::Display for ScriptOpcode {
@@ -428,14 +428,12 @@ impl ScriptOpcode {
             | OpcodeIndent::IndentOutIn
             | OpcodeIndent::IndentOut
             | OpcodeIndent::DblIndentOut => None,
-            OpcodeIndent::PassthroughRaw => Some([
-                ExprOverride::Normal,
-                ExprOverride::Raw,
-            ].to_vec()),
-            OpcodeIndent::PassthroughHex => Some([
-                ExprOverride::Normal,
-                ExprOverride::Hex,
-            ].to_vec()),
+            OpcodeIndent::PassthroughRaw => {
+                Some([ExprOverride::Normal, ExprOverride::Raw].to_vec())
+            }
+            OpcodeIndent::PassthroughHex => {
+                Some([ExprOverride::Normal, ExprOverride::Hex].to_vec())
+            }
             OpcodeIndent::DblIndentIn => {
                 if let Self::SwitchRaw = self {
                     // TODO: verify this is correct!
@@ -473,10 +471,12 @@ impl sym::SymDisplay for Instruction {
 }
 
 impl Instruction {
-    fn parse_one<R>(reader: &mut R) -> Result<Self, R::Error> where
+    fn parse_one<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
         R: interop::CReader<sym::SymAddr> + ?Sized,
     {
-        let header = reader.read_u32()
+        let header = reader
+            .read_u32()
             .map_err(|_| error!(reader, UnresolvedOpcode))?;
 
         let opc = ScriptOpcode::from_u16(header as u16)
@@ -486,10 +486,7 @@ impl Instruction {
             None => vec![ExprOverride::Normal; arg_count as usize],
             Some(overrides) => {
                 if overrides.len() != arg_count.into() {
-                    bail!(reader, UnexpectedArgs(
-                        overrides.len(),
-                        arg_count,
-                    ));
+                    bail!(reader, UnexpectedArgs(overrides.len(), arg_count,));
                 }
                 overrides
             }
@@ -503,11 +500,12 @@ impl Instruction {
                     rel::RelocType::PPCAddr32 => {
                         // TODO: check that file is the correct value
                         Expr::AddressSym(r.target)
-                    },
-                    rt => bail!(reader, UnresolvedArgRel(rt))
+                    }
+                    rt => bail!(reader, UnresolvedArgRel(rt)),
                 },
-                rel::Symbol::Partial
-                | rel::Symbol::Unknown => bail!(reader, UnresolvedArg),
+                rel::Symbol::Partial | rel::Symbol::Unknown => {
+                    bail!(reader, UnresolvedArg)
+                }
             })
         }
 
@@ -599,8 +597,9 @@ impl sym::SymDisplay for Script {
 }
 
 impl interop::CRead<sym::SymAddr> for Script {
-    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
-        R: CReader<sym::SymAddr> + ?Sized
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: CReader<sym::SymAddr> + ?Sized,
     {
         let mut insns = Vec::new();
         let len = reader.remaining();
@@ -615,14 +614,11 @@ impl interop::CRead<sym::SymAddr> for Script {
 
         reader.expect_fully_read()?;
 
-        Ok(Self {
-            insns,
-            len,
-        })
+        Ok(Self { insns, len })
     }
 }
 
-pub struct EvtParser<'r, 'b>{
+pub struct EvtParser<'r, 'b> {
     overlay: &'r rel::RelocOverlay<'b, 'b>,
     evt_scripts: RefCell<BTreeMap<rel::SectionAddr, Script>>,
 }
@@ -635,7 +631,10 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         }
     }
 
-    pub fn add_from_symdb(&self, symdb: &sym::SymbolDatabase) -> reader::Res<()> {
+    pub fn add_from_symdb(
+        &self,
+        symdb: &sym::SymbolDatabase,
+    ) -> reader::Res<()> {
         let mut evt_scripts = self.evt_scripts.borrow_mut();
 
         for sym in symdb.rel_iter(self.overlay.backing().header().id.get()) {
@@ -653,14 +652,11 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         &self,
         symdb: &sym::SymbolDatabase,
     ) -> reader::Res<()> {
-        let fn_evt_addr = symdb.get_addr("relSetEvtAddr")
-            .ok_or_else(|| {
-                reader::Error::new(
-                    reader::ErrorType::Custom(
-                        ErrorType::MissingSymbol("relSetEvtAddr".into()).to_string()
-                    )
-                )
-            })?;
+        let fn_evt_addr = symdb.get_addr("relSetEvtAddr").ok_or_else(|| {
+            reader::Error::new(reader::ErrorType::Custom(
+                ErrorType::MissingSymbol("relSetEvtAddr".into()).to_string(),
+            ))
+        })?;
 
         // Find the root event script by using the heuristics of knowing that
         // it will call relSetEvtAddr() in the prolog function.
@@ -691,14 +687,14 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                     // jmp callee
                     rel::Symbol::Rel(rel::RelocSymbol {
                         file: 0,
-                        target: rel::SectionAddr {
-                            sect: _,
-                            offset: callee,
-                        },
+                        target:
+                            rel::SectionAddr {
+                                sect: _,
+                                offset: callee,
+                            },
                         rtype: rel::RelocType::PPCRel24,
                         orig: _,
-                    })
-
+                    }),
                 ) if sym::SymAddr::Dol(callee) == fn_evt_addr => {
                     queue.push(target);
                 }
@@ -706,7 +702,6 @@ impl<'r, 'b> EvtParser<'r, 'b> {
             }
             prolog_off += 4;
         }
-
 
         let mut evt_scripts = self.evt_scripts.borrow_mut();
         while let Some(addr) = queue.pop() {
@@ -743,9 +738,13 @@ impl<'r, 'b> EvtParser<'r, 'b> {
     pub fn dump_scripts(&self, symdb: &sym::SymbolDatabase) {
         let evt_scripts = self.evt_scripts.borrow();
         for (addr, script) in evt_scripts.iter() {
-            println!("{}: {}",
+            println!(
+                "{}: {}",
                 symdb.symbol_name(
-                    sym::SymAddr::Rel(self.overlay.backing().header().id.get(), *addr),
+                    sym::SymAddr::Rel(
+                        self.overlay.backing().header().id.get(),
+                        *addr
+                    ),
                     false,
                 ),
                 sym::SymContext::new(
@@ -757,5 +756,3 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         }
     }
 }
-
-
