@@ -34,64 +34,45 @@ pub enum ErrorType {
 
 mk_err_wrapper! { ErrorType }
 
-#[repr(C)]
-#[derive(Pod, Zeroable, Default, Clone, Copy)]
-pub struct BigU16 {
-    int: u16,
-}
+macro_rules! mk_be_int {
+    ($($name:ident: $ty:ty),* $(,)?) => {
+        $(#[repr(C)]
+        #[derive(Pod, Zeroable, Default, Clone, Copy)]
+        pub struct $name {
+            int: $ty
+        }
 
-impl std::fmt::Debug for BigU16 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("BigU16").field(&self.get()).finish()
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&self.get()).finish()
+            }
+        }
+
+        impl serde::Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
+                S: serde::Serializer
+            {
+                self.get().serialize(serializer)
+            }
+        }
+
+        #[allow(unused)]
+        impl $name {
+            pub fn new(val: $ty) -> Self {
+                Self { int: <$ty>::to_be(val) }
+            }
+
+            pub fn get(&self) -> $ty {
+                <$ty>::from_be(self.int)
+            }
+        })*
     }
 }
 
-impl serde::Serialize for BigU16 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
-        S: serde::Serializer
-    {
-        self.get().serialize(serializer)
-    }
-}
-
-impl BigU16 {
-    pub fn new(val: u16) -> Self {
-        Self { int: u16::to_be(val) }
-    }
-
-    pub fn get(&self) -> u16 {
-        u16::from_be(self.int)
-    }
-}
-
-#[repr(C)]
-#[derive(Pod, Zeroable, Default, Clone, Copy)]
-pub struct BigU32 {
-    int: u32,
-}
-
-impl std::fmt::Debug for BigU32 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("BigU32").field(&self.get()).finish()
-    }
-}
-
-impl serde::Serialize for BigU32 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
-        S: serde::Serializer
-    {
-        self.get().serialize(serializer)
-    }
-}
-
-impl BigU32 {
-    pub fn new(val: u32) -> Self {
-        Self { int: u32::to_be(val) }
-    }
-
-    pub fn get(&self) -> u32 {
-        u32::from_be(self.int)
-    }
+mk_be_int! {
+    BigU16: u16,
+    BigU32: u32,
+    BigU64: u64,
 }
 
 #[repr(C)]

@@ -4,18 +4,15 @@ use std::{
     sync::LazyLock,
 };
 
+use interop::CReader;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 use thiserror::Error;
 
-use crate::{mk_err_wrapper, reader, rel, sym};
+use crate::{reader, rel, sym};
 
 #[derive(Debug, Error)]
 pub enum ErrorType {
-    #[error("Error in parsing rel file: {0}")]
-    RelFileError(rel::ErrorType),
-    #[error("{0}")]
-    ReaderError(reader::ErrorType),
     #[error("Expected symbol in database: {0}")]
     MissingSymbol(String),
     #[error("Bad script opcode: {0}")]
@@ -30,11 +27,18 @@ pub enum ErrorType {
     UnexpectedArgs(usize, u16),
 }
 
-mk_err_wrapper! {
-    ErrorType {
-        RelFileError => rel::ErrorType,
-        ReaderError => reader::ErrorType,
-    }
+macro_rules! error {
+    ($reader:expr, $err:expr) => {{
+        use ErrorType::*;
+        $reader.error_custom($err.to_string())
+    }}
+}
+
+macro_rules! bail {
+    ($reader:expr, $err:expr) => {{
+        use ErrorType::*;
+        return Err($reader.error_custom($err.to_string()))
+    }}
 }
 
 #[derive(Clone, Copy)]
@@ -146,8 +150,16 @@ impl sym::SymDisplay for Expr {
         area: u32,
     ) -> std::fmt::Result {
         match self {
-            Expr::Address(addr) => write!(f, "{}", symdb.symbol_name(sym::SymAddr::Dol(*addr))),
-            Expr::AddressSym(local) => write!(f, "{}", symdb.symbol_name(sym::SymAddr::Rel(area, *local))),
+            Expr::Address(addr) => write!(
+                f,
+                "{}",
+                symdb.symbol_name(sym::SymAddr::Dol(*addr), true),
+            ),
+            Expr::AddressSym(local) => write!(
+                f,
+                "{}",
+                symdb.symbol_name(sym::SymAddr::Rel(area, *local), true),
+            ),
             Expr::Float(fl) => write!(f, "{fl:.5}"),
             Expr::UF(id) => write!(f, "UF({id})"),
             Expr::UW(id) => write!(f, "UW({id})"),
@@ -461,23 +473,23 @@ impl sym::SymDisplay for Instruction {
 }
 
 impl Instruction {
-    fn parse_one(reader: &mut reader::Reader) -> Res<Self> {
-        let header = match reader.read_32()? {
-            rel::Symbol::Value(v) => v,
-            _ => return Err(error!(UnresolvedOpcode)),
-        };
+    fn parse_one<R>(reader: &mut R) -> Result<Self, R::Error> where
+        R: interop::CReader<sym::SymAddr> + ?Sized,
+    {
+        let header = reader.read_u32()
+            .map_err(|_| error!(reader, UnresolvedOpcode))?;
 
         let opc = ScriptOpcode::from_u16(header as u16)
-            .ok_or_else(|| error!(BadOpcode(header as u16)))?;
+            .ok_or_else(|| error!(reader, BadOpcode(header as u16)))?;
         let arg_count = (header >> 16) as u16;
         let overrides = match opc.overrides() {
             None => vec![ExprOverride::Normal; arg_count as usize],
             Some(overrides) => {
                 if overrides.len() != arg_count.into() {
-                    return Err(error!(UnexpectedArgs(
-                        overrides.len(), 
+                    bail!(reader, UnexpectedArgs(
+                        overrides.len(),
                         arg_count,
-                    )));
+                    ));
                 }
                 overrides
             }
@@ -485,17 +497,17 @@ impl Instruction {
 
         let mut args = Vec::new();
         for ovr in overrides {
-            args.push(match reader.read_32()? {
+            args.push(match reader.read_rel_u32()? {
                 rel::Symbol::Value(v) => Expr::new(v as i32, ovr),
                 rel::Symbol::Rel(r) => match r.rtype {
                     rel::RelocType::PPCAddr32 => {
                         // TODO: check that file is the correct value
                         Expr::AddressSym(r.target)
                     },
-                    rt => bail!(UnresolvedArgRel(rt))
+                    rt => bail!(reader, UnresolvedArgRel(rt))
                 },
                 rel::Symbol::Partial
-                | rel::Symbol::Unknown => bail!(UnresolvedArg),
+                | rel::Symbol::Unknown => bail!(reader, UnresolvedArg),
             })
         }
 
@@ -510,13 +522,19 @@ impl Instruction {
 #[derive(Debug)]
 pub struct Script {
     insns: Vec<Instruction>,
-    start: rel::SectionAddr,
-    len: u32,
+    len: usize,
 }
 
-impl reader::Size for Script {
-    fn len(&self) -> u32 {
+impl interop::Size for Script {
+    fn len(&self) -> usize {
         self.len
+    }
+}
+
+impl interop::CTypeable for Script {
+    type Canonical = Script;
+    fn compute_type() -> interop::CTypeKind {
+        interop::CTypeKind::Array(None, interop::CTypePrim::U32)
     }
 }
 
@@ -548,10 +566,10 @@ impl sym::SymDisplay for Script {
         area: u32,
     ) -> std::fmt::Result {
         let mut indent = 0;
-        let mut addr = self.start;
+        let mut off = 0;
         write!(f, "EVENT_SCRIPT(\n")?;
         for insn in self {
-            write!(f, "/* {addr} */ ")?;
+            write!(f, "/* {off:05} */ ")?;
 
             let (ind_out, ind_in) = match insn.opc.indent() {
                 OpcodeIndent::Passthrough
@@ -573,18 +591,19 @@ impl sym::SymDisplay for Script {
             indent += ind_in;
 
             write!(f, ",\n")?;
-            addr += insn.size();
+            off += insn.size();
         }
 
         write!(f, ")")
     }
 }
 
-impl Script {
-    pub fn parse(
-        reader: &mut reader::Reader,
-    ) -> Res<Self> {
+impl interop::CRead<sym::SymAddr> for Script {
+    fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
+        R: CReader<sym::SymAddr> + ?Sized
+    {
         let mut insns = Vec::new();
+        let len = reader.remaining();
         loop {
             let insn = Instruction::parse_one(reader)?;
             let opc = insn.opc;
@@ -598,8 +617,7 @@ impl Script {
 
         Ok(Self {
             insns,
-            start: reader.start(),
-            len: reader.rel_pos(),
+            len,
         })
     }
 }
@@ -617,15 +635,14 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         }
     }
 
-    pub fn add_from_symdb(&self, symdb: &sym::SymbolDatabase) -> Result<(), Error> {
+    pub fn add_from_symdb(&self, symdb: &sym::SymbolDatabase) -> reader::Res<()> {
         let mut evt_scripts = self.evt_scripts.borrow_mut();
 
         for sym in symdb.rel_iter(self.overlay.backing().header().id.get()) {
             if sym.value_type == sym::DataType::Simple(sym::SimpleType::Evt) {
                 let mut reader = reader::Reader::new(&self.overlay, sym);
-                let script = Script::parse(&mut reader)?;
-                let addr = script.start;
-                evt_scripts.insert(addr, script);
+                let script: Script = reader.read_val()?;
+                evt_scripts.insert(sym.section_addr(), script);
             }
         }
 
@@ -635,9 +652,15 @@ impl<'r, 'b> EvtParser<'r, 'b> {
     pub fn search_evt_scripts(
         &self,
         symdb: &sym::SymbolDatabase,
-    ) -> Result<(), Error> {
+    ) -> reader::Res<()> {
         let fn_evt_addr = symdb.get_addr("relSetEvtAddr")
-            .ok_or_else(|| error!(MissingSymbol("relSetEvtAddr".into())))?;
+            .ok_or_else(|| {
+                reader::Error::new(
+                    reader::ErrorType::Custom(
+                        ErrorType::MissingSymbol("relSetEvtAddr".into()).to_string()
+                    )
+                )
+            })?;
 
         // Find the root event script by using the heuristics of knowing that
         // it will call relSetEvtAddr() in the prolog function.
@@ -693,7 +716,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
 
             // Parse this current script.
             let mut reader = reader::Reader::new_unsized(self.overlay, addr);
-            let script = Script::parse(&mut reader)?;
+            let script: Script = reader.read_val()?;
 
             // Search for nested event scripts.
             // TODO: does other calls take a script reference?
@@ -721,7 +744,10 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         let evt_scripts = self.evt_scripts.borrow();
         for (addr, script) in evt_scripts.iter() {
             println!("{}: {}",
-                symdb.symbol_name(sym::SymAddr::Rel(self.overlay.backing().header().id.get(), *addr)),
+                symdb.symbol_name(
+                    sym::SymAddr::Rel(self.overlay.backing().header().id.get(), *addr),
+                    false,
+                ),
                 sym::SymContext::new(
                     symdb,
                     self.overlay.backing().header().id.get(),

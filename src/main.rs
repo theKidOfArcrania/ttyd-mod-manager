@@ -13,6 +13,7 @@ use clap::{Subcommand, Parser};
 
 extern crate num_derive;
 
+mod clsdata;
 mod error;
 mod evt;
 mod gen;
@@ -381,7 +382,7 @@ fn main() -> Result<(), anyhow::Error> {
                             File::open(symdb)?
                         )?
                     );
-                    
+
                     let mut codes = HashMap::new();
                     let mut headers = BTreeSet::new();
                     for s in symdb.rel_iter(area_id) {
@@ -395,6 +396,7 @@ fn main() -> Result<(), anyhow::Error> {
                             }
                         }
                         let def = gen::generate_line(&overlay, &symdb, s)?;
+
                         let code = codes.entry(file).or_insert_with(String::new);
                         code.push_str(&def.definition);
                         code.push_str("\n");

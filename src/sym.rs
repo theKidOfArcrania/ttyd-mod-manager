@@ -1,6 +1,9 @@
 use std::{
+    cell::OnceCell,
     collections::{BTreeSet, HashMap, HashSet},
+    fmt::{self, Write as _},
     io,
+    mem::size_of,
 };
 
 use serde::{de::IntoDeserializer, Deserialize, Serialize};
@@ -155,6 +158,12 @@ pub struct RawSymEntry {
     pub value: String,
     #[serde(skip)]
     pub local: bool,
+}
+
+impl RawSymEntry {
+    pub fn section_addr(&self) -> rel::SectionAddr {
+        rel::SectionAddr::new(self.sec_id, self.sec_offset)
+    }
 }
 
 mod serde_opt_u32_hex {
@@ -312,11 +321,103 @@ impl RawSymtab {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub enum SymAddr {
     Dol(u32),
     Rel(u32, rel::SectionAddr),
 }
+
+impl From<u32> for SymAddr {
+    fn from(value: u32) -> Self {
+        Self::Dol(value)
+    }
+}
+
+impl interop::Ptr for SymAddr {
+    type Num = u32;
+    type Rel<T> = rel::Symbol<T>;
+}
+
+impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
+    fn get_type(&self) -> interop::SymbolicType<&T, SymAddr> {
+        use interop::SymbolicType::*;
+        match self {
+            rel::Symbol::Value(v) => Value(v),
+            rel::Symbol::Rel(reloc) => {
+                if reloc.rtype.size() != size_of::<T>() {
+                    return Unknown;
+                }
+                match reloc.rtype {
+                    rel::RelocType::PPCAddr32
+                    | rel::RelocType::PPCAddr16 => (),
+                    _ => return Unknown,
+                };
+
+                if reloc.file == 0 {
+                    Pointer(SymAddr::Dol(reloc.target.offset))
+                } else {
+                    Pointer(SymAddr::Rel(reloc.file, reloc.target))
+                }
+            }
+            rel::Symbol::Partial
+            | rel::Symbol::Unknown => Unknown,
+        }
+    }
+}
+
+impl interop::CDump<SymbolDatabase> for SymAddr {
+    type Error = fmt::Error;
+
+    fn dump(
+        &self,
+        f: &mut interop::Dumper,
+        ctx: &SymbolDatabase,
+    ) -> std::fmt::Result {
+        write!(f, "{}", ctx.symbol_name(*self, true))
+    }
+}
+
+pub struct AddrDumpCtx<'a> {
+    var_type: &'a interop::CType,
+    symdb: &'a SymbolDatabase,
+    cached: OnceCell<String>,
+}
+
+impl<'a> AddrDumpCtx<'a> {
+    pub fn new(var_type: &'a interop::CType, symdb: &'a SymbolDatabase) -> Self {
+        Self {
+            var_type,
+            symdb,
+            cached: OnceCell::new(),
+        }
+    }
+}
+
+impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
+    type Error = fmt::Error;
+
+    fn dump(
+        &self,
+        f: &mut interop::Dumper,
+        ctx: &AddrDumpCtx<'a>,
+    ) -> std::fmt::Result {
+        let cast = ctx.cached.get_or_init(|| {
+            let pointee_tp = ctx.var_type
+                .get_pointee()
+                .expect("should have pointee");
+            match &pointee_tp.kind {
+                interop::CTypeKind::Prim(_)
+                | interop::CTypeKind::TDef(_) => "".into(),
+                interop::CTypeKind::Array(_, _)
+                | interop::CTypeKind::PtrArray(_, _)
+                | interop::CTypeKind::Ptr(_) => format!("({pointee_tp}) "),
+            }
+        });
+
+        write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, true))
+    }
+}
+
 
 #[derive(Default, Clone)]
 pub struct SymbolDatabase {
@@ -393,12 +494,18 @@ impl SymbolDatabase {
         self.primary_name.get(&addr).map(String::as_str)
     }
 
-    pub fn symbol_name(&self, addr: SymAddr) -> String {
+    pub fn symbol_name(&self, addr: SymAddr, is_ref: bool) -> String {
+        let ref_sym = if is_ref {
+            "&"
+        } else {
+            ""
+        };
         match self.name_of(addr) {
-            Some(name) => name.into(),
+            Some(name) => format!("{ref_sym}{name}"),
             None => match addr {
-                SymAddr::Dol(addr) => format!("lbl_{addr:08x}"),
-                SymAddr::Rel(sect, saddr) => format!("{}_sect_{sect}", saddr.var_name()),
+                SymAddr::Dol(0) => format!("NULL"),
+                SymAddr::Dol(addr) => format!("{ref_sym}lbl_{addr:08x}"),
+                SymAddr::Rel(sect, saddr) => format!("{ref_sym}{}_sect_{sect}", saddr.var_name()),
             }
         }
     }

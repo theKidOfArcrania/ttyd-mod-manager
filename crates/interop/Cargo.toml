@@ -1,0 +1,11 @@
+[package]
+name = "interop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+interop_derive = { path = "../interop_derive", optional = true }
+typemap = "0.3.3"
+
+[features]
+derive = ["dep:interop_derive"]
