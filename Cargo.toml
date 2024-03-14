@@ -12,12 +12,14 @@ clap = { version = "4.4.0", features = ["derive"] }
 csv = "1.3.0"
 encoding_rs = "0.8.33"
 enum-utils = "0.1.2"
-interop = { path = "./crates/interop", features = ["derive"] }
 num = "0.4.1"
 num-derive = "0.4.2"
 num-traits = "0.2.18"
 serde = { version = "1.0.197", features = ["derive"] }
 thiserror = "1.0.57"
+
+error = { path = "./crates/error" }
+interop = { path = "./crates/interop", features = ["derive"] }
 
 [features]
 spm = []

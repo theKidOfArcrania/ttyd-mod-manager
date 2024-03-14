@@ -7,7 +7,9 @@ use bytemuck::{Pod, Zeroable};
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::{mk_err_wrapper, utils::assert_sane_size};
+use error::mk_err_wrapper;
+
+use crate::utils::SaneSize;
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
@@ -585,8 +587,9 @@ impl<'b> RelFile<'b> {
         }
     }
 
-    pub fn read<T: Pod>(&self, addr: SectionAddr) -> Result<T, Error> {
-        assert_sane_size::<T>();
+    pub fn read<T: Pod>(&self, addr: SectionAddr) -> Result<T, Error> where
+        T: SaneSize
+    {
         Ok(bytemuck::pod_read_unaligned(
             self.slice_of(addr, size_of::<T>() as u32)?,
         ))
@@ -861,9 +864,7 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
         Ok(())
     }
 
-    pub fn write<T: Pod>(&mut self, addr: SectionAddr, val: &T) {
-        assert_sane_size::<T>();
-
+    pub fn write<T: Pod + SaneSize>(&mut self, addr: SectionAddr, val: &T) {
         self.invalidate_write(addr, size_of::<T>());
 
         let data = bytemuck::bytes_of(val);
@@ -880,9 +881,10 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
         self.write(addr, &BigU32::new(val));
     }
 
-    pub fn read<T: Pod>(&self, addr: SectionAddr) -> Result<Symbol<T>, Error> {
-        assert_sane_size::<T>();
-
+    pub fn read<T: Pod + SaneSize>(
+        &self,
+        addr: SectionAddr,
+    ) -> Result<Symbol<T>, Error> {
         Ok(match self.relocs.get(&addr) {
             // Assume all relocations are concrete values
             None | Some(Symbol::Value(_)) => {

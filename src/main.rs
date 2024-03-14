@@ -1,6 +1,7 @@
 #![feature(byte_slice_trim_ascii)]
-#![feature(error_generic_member_access)]
 #![feature(lazy_cell)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 use std::{
     collections::{BTreeSet, HashMap},
     fs::{self, File},
@@ -14,7 +15,6 @@ use clap::{Parser, Subcommand};
 extern crate num_derive;
 
 mod clsdata;
-mod error;
 mod evt;
 mod gen;
 mod msg;

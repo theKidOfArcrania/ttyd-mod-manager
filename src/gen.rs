@@ -1,6 +1,8 @@
 use thiserror::Error;
 
-use crate::{clsdata, evt, mk_err_wrapper, reader, rel, sym};
+use crate::{clsdata, evt, reader, rel, sym};
+
+use error::mk_err_wrapper;
 
 use std::fmt::Write as _;
 

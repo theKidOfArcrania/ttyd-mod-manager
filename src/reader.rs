@@ -3,7 +3,9 @@ use std::mem::size_of;
 use bytemuck::Pod;
 use thiserror::Error;
 
-use crate::{mk_err_wrapper, rel, sym, utils};
+use error::mk_err_wrapper;
+
+use crate::{rel, sym, utils::SaneSize};
 
 #[derive(Debug, Error)]
 pub enum ErrorType {
@@ -147,8 +149,7 @@ impl<'r, 'b> Reader<'r, 'b> {
         self.current.offset - self.start.offset
     }
 
-    fn read<T: Pod>(&mut self) -> Res<rel::Symbol<T>> {
-        utils::assert_sane_size::<T>();
+    fn read<T: Pod + SaneSize>(&mut self) -> Res<rel::Symbol<T>> {
         if self.size - self.rel_pos() < size_of::<T>() as u32 {
             bail!(ReadOverflow(self.rel_pos() + 1, self.size));
         }
