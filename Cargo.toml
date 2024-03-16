@@ -20,6 +20,7 @@ thiserror = "1.0.57"
 
 error = { path = "./crates/error" }
 interop = { path = "./crates/interop", features = ["derive"] }
+ppcdis = { path = "./crates/ppcdis" }
 
 [features]
 spm = []

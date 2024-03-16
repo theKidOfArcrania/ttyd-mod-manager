@@ -1,0 +1,136 @@
+decode_tests:
+- opcode: 0x0c66ffe9
+  insn: twi
+  operands:
+  - "3"
+  - r6
+  - "-23"
+- opcode: 0x3465ffe9
+  insn: "addic."
+  operands:
+  - r3
+  - r5
+  - "-23"
+- opcode: 0x29859323
+  insn: "cmplwi"
+  operands:
+  - 3
+  - r5
+  - "37667"
+- opcode: 0xe86473f1
+  insn: "ldu"
+  operands:
+  - r3
+  - "29680(r4)"
+- opcode: 0x7841f98c
+  insn: "rldimi"
+  operands:
+  - r1
+  - r2
+  - "31"
+  - "6"
+- opcode: 0x7841f9cf
+  insn: "rldimi."
+  operands:
+  - r1
+  - r2
+  - "63"
+  - "7"
+- opcode: 0x50a1b946
+  insn: "rlwimi"
+  operands:
+  - r1
+  - r5
+  - "23"
+  - "5"
+  - "3"
+- opcode: 0xec221824
+  insn: "fdivs"
+  operands:
+  - "1"
+  - "2"
+  - "3"
+- opcode: 0xfc201030
+  insn: "fre"
+  operands:
+  - "1"
+  - "2"
+- opcode: 0x7c412338
+  insn: "orc"
+  operands:
+  - r1
+  - r2
+  - r4
+- opcode: 0x6041ff3f
+  insn: "ori"
+  operands:
+  - r1
+  - r2
+  - 65343
+- opcode: 0x7ee11008
+  insn: "tw"
+  operands:
+  - 23
+  - r1
+  - r2
+- opcode: 0x7cc1116a
+  insn: "stdux"
+  operands:
+  - r6
+  - r1
+  - r2
+- opcode: 0x7cc1116e
+  insn: "stwux"
+  operands:
+  - r6
+  - r1
+  - r2
+- opcode: 0x7c223014
+  insn: "addc"
+  operands:
+  - r1
+  - r2
+  - r6
+- opcode: 0x7c223414
+  insn: "addco"
+  operands:
+  - r1
+  - r2
+  - r6
+- opcode: 0x7c223415
+  insn: "addco."
+  operands:
+  - r1
+  - r2
+  - r6
+- opcode: 0x7c411831
+  insn: "slw."
+  operands:
+  - r1
+  - r2
+  - r3
+- opcode: 0x7c2502a6
+  insn: "mfspr"
+  operands:
+  - r1
+  - 5
+- opcode: 0x7c3cfaa6
+  insn: "mfspr"
+  operands:
+  - r1
+  - 1020
+- opcode: 0x7ca022a6
+  insn: "mfspr"
+  operands:
+  - r5
+  - 128
+- opcode: 0x7c3cfba6
+  insn: "mtspr"
+  operands:
+  - 1020
+  - r1
+- opcode: 0x7ca20074
+  insn: "cntlzd"
+  operands:
+  - r2
+  - r5
