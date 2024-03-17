@@ -18,7 +18,7 @@ pub enum ErrorType {
     #[error("Bad script argument due to unexpected relocation entry")]
     UnresolvedArg,
     #[error("Bad script argument due to unexpected relocation entry ({0:?})")]
-    UnresolvedArgRel(rel::RelocType),
+    UnresolvedArgRel(ppcdis::RelocType),
     #[error("Unexpected number of args: expected ({0}) but got ({1})")]
     UnexpectedArgs(usize, u16),
 }
@@ -497,7 +497,7 @@ impl Instruction {
             args.push(match reader.read_rel_u32()? {
                 rel::Symbol::Value(v) => Expr::new(v as i32, ovr),
                 rel::Symbol::Rel(r) => match r.rtype {
-                    rel::RelocType::PPCAddr32 => {
+                    ppcdis::RelocType::PPCAddr32 => {
                         // TODO: check that file is the correct value
                         Expr::AddressSym(r.target)
                     }
@@ -681,7 +681,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                     rel::Symbol::Rel(rel::RelocSymbol {
                         file: _,
                         target,
-                        rtype: rel::RelocType::PPCAddr16Lo,
+                        rtype: ppcdis::RelocType::PPCAddr16Lo,
                         orig: _,
                     }),
                     // jmp callee
@@ -692,7 +692,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                                 sect: _,
                                 offset: callee,
                             },
-                        rtype: rel::RelocType::PPCRel24,
+                        rtype: ppcdis::RelocType::PPCRel24,
                         orig: _,
                     }),
                 ) if sym::SymAddr::Dol(callee) == fn_evt_addr => {

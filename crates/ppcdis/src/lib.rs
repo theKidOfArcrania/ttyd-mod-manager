@@ -7,4 +7,5 @@ mod insn;
 mod rel;
 
 pub use insn::{Instruction, RawInsn, Error, ErrorType};
+pub use rel::{RelocAction, RelocType};
 

@@ -368,7 +368,7 @@ impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
                     return Unknown;
                 }
                 match reloc.rtype {
-                    rel::RelocType::PPCAddr32 | rel::RelocType::PPCAddr16 => (),
+                    ppcdis::RelocType::PPCAddr32 | ppcdis::RelocType::PPCAddr16 => (),
                     _ => return Unknown,
                 };
 
