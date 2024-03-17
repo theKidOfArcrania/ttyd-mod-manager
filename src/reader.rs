@@ -39,6 +39,7 @@ impl interop::Size for sym::SymAddr {
     }
 }
 
+#[derive(Clone)]
 pub struct Reader<'r, 'b> {
     overlay: &'r rel::RelocOverlay<'b, 'b>,
     start: rel::SectionAddr,

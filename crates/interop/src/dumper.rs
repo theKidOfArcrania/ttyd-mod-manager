@@ -9,6 +9,12 @@ pub struct Dumper {
     res: String,
 }
 
+impl AsRef<str> for Dumper {
+    fn as_ref(&self) -> &str {
+        &self.res
+    }
+}
+
 impl fmt::Write for Dumper {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.res.push_str(s);

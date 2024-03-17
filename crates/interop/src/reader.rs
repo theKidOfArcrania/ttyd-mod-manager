@@ -48,7 +48,7 @@ pub trait Ptr: Sized {
     type Rel<T>: Symbolic<T, Self>;
 }
 
-pub trait CReader<P: Ptr> {
+pub trait CReader<P: Ptr>: Clone {
     type Error;
 
     fn error_expected_eof(&self) -> Self::Error;

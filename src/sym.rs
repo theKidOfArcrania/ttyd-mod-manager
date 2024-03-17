@@ -372,11 +372,7 @@ impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
                     _ => return Unknown,
                 };
 
-                if reloc.file == 0 {
-                    Pointer(SymAddr::Dol(reloc.target.offset))
-                } else {
-                    Pointer(SymAddr::Rel(reloc.file, reloc.target))
-                }
+                Pointer(reloc.get_address())
             }
             rel::Symbol::Partial | rel::Symbol::Unknown => Unknown,
         }
@@ -396,6 +392,7 @@ impl interop::CDump<SymbolDatabase> for SymAddr {
 }
 
 pub struct AddrDumpCtx<'a> {
+    area: u32,
     var_type: &'a interop::CType,
     symdb: &'a SymbolDatabase,
     cached: OnceCell<String>,
@@ -403,14 +400,47 @@ pub struct AddrDumpCtx<'a> {
 
 impl<'a> AddrDumpCtx<'a> {
     pub fn new(
+        area: u32,
         var_type: &'a interop::CType,
         symdb: &'a SymbolDatabase,
     ) -> Self {
         Self {
+            area,
             var_type,
             symdb,
             cached: OnceCell::new(),
         }
+    }
+
+    pub fn area(&self) -> u32 {
+        self.area
+    }
+
+    pub fn cast_name(&self) -> &str {
+        self.cached.get_or_init(|| {
+            let pointee_tp =
+                self.var_type.get_pointee().expect("should have pointee");
+            match &pointee_tp.kind {
+                interop::CTypeKind::Prim(_) | interop::CTypeKind::TDef(_) => {
+                    "".into()
+                }
+                interop::CTypeKind::Array(_, _)
+                | interop::CTypeKind::PtrArray(_, _)
+                | interop::CTypeKind::Ptr(_) => format!("({pointee_tp}) "),
+            }
+        })
+    }
+
+    pub fn symdb(&self) -> &SymbolDatabase {
+        self.symdb
+    }
+
+    pub fn to_string<T>(&self, data: &T) -> Result<String, T::Error> where
+        T: interop::CDump<AddrDumpCtx<'a>>,
+    {
+        let mut dumper = interop::Dumper::default();
+        data.dump(&mut dumper, self)?;
+        Ok(dumper.as_ref().to_string())
     }
 }
 
@@ -422,19 +452,7 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         f: &mut interop::Dumper,
         ctx: &AddrDumpCtx<'a>,
     ) -> std::fmt::Result {
-        let cast = ctx.cached.get_or_init(|| {
-            let pointee_tp =
-                ctx.var_type.get_pointee().expect("should have pointee");
-            match &pointee_tp.kind {
-                interop::CTypeKind::Prim(_) | interop::CTypeKind::TDef(_) => {
-                    "".into()
-                }
-                interop::CTypeKind::Array(_, _)
-                | interop::CTypeKind::PtrArray(_, _)
-                | interop::CTypeKind::Ptr(_) => format!("({pointee_tp}) "),
-            }
-        });
-
+        let cast = ctx.cast_name();
         write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, true))
     }
 }
@@ -554,43 +572,5 @@ impl SymbolDatabase {
             .filter_map(move |addr| {
                 self.raw_ent.get(&SymAddr::Rel(area, *addr))
             })
-    }
-}
-
-pub trait SymDisplay {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        symdb: &SymbolDatabase,
-        area: u32,
-    ) -> std::fmt::Result;
-}
-
-pub struct SymContext<'r, T> {
-    pub symdb: &'r SymbolDatabase,
-    pub area: u32,
-    pub val: &'r T,
-}
-
-impl<'r, T> SymContext<'r, T> {
-    pub fn new(symdb: &'r SymbolDatabase, area: u32, val: &'r T) -> Self {
-        Self { symdb, area, val }
-    }
-}
-
-impl<'r, T: SymDisplay> std::fmt::Display for SymContext<'r, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.val.fmt(f, self.symdb, self.area)
-    }
-}
-
-impl<T: std::fmt::Display> SymDisplay for T {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        _symdb: &SymbolDatabase,
-        _area: u32,
-    ) -> std::fmt::Result {
-        std::fmt::Display::fmt(self, f)
     }
 }

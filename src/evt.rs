@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::BTreeMap, sync::LazyLock};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    fmt::Write as _,
+    sync::LazyLock,
+};
 
 use interop::CReader;
 use num::FromPrimitive;
@@ -140,40 +145,41 @@ impl Expr {
     }
 }
 
-impl sym::SymDisplay for Expr {
-    fn fmt(
+impl interop::CDump<sym::AddrDumpCtx<'_>> for Expr {
+    type Error = std::fmt::Error;
+
+    fn dump(
         &self,
-        f: &mut std::fmt::Formatter<'_>,
-        symdb: &sym::SymbolDatabase,
-        area: u32,
-    ) -> std::fmt::Result {
+        out: &mut interop::Dumper,
+        ctx: &sym::AddrDumpCtx,
+    ) -> Result<(), Self::Error> {
         match self {
             Expr::Address(addr) => write!(
-                f,
+                out,
                 "{}",
-                symdb.symbol_name(sym::SymAddr::Dol(*addr), true),
+                ctx.symdb().symbol_name(sym::SymAddr::Dol(*addr), true),
             ),
             Expr::AddressSym(local) => write!(
-                f,
+                out,
                 "{}",
-                symdb.symbol_name(sym::SymAddr::Rel(area, *local), true),
+                ctx.symdb().symbol_name(sym::SymAddr::Rel(ctx.area(), *local), true),
             ),
-            Expr::Float(fl) => write!(f, "{fl:.5}"),
-            Expr::UF(id) => write!(f, "UF({id})"),
-            Expr::UW(id) => write!(f, "UW({id})"),
-            Expr::GSW(id) => write!(f, "GSW({id})"),
-            Expr::LSW(id) => write!(f, "LSW({id})"),
-            Expr::GSWF(id) => write!(f, "GSWF({id})"),
-            Expr::LSWF(id) => write!(f, "LSWF({id})"),
-            Expr::GF(id) => write!(f, "GF({id})"),
-            Expr::LF(id) => write!(f, "LF({id})"),
-            Expr::GW(id) => write!(f, "GW({id})"),
-            Expr::LW(id) => write!(f, "LW({id})"),
+            Expr::Float(fl) => write!(out, "{fl:.5}"),
+            Expr::UF(id) => write!(out, "UF({id})"),
+            Expr::UW(id) => write!(out, "UW({id})"),
+            Expr::GSW(id) => write!(out, "GSW({id})"),
+            Expr::LSW(id) => write!(out, "LSW({id})"),
+            Expr::GSWF(id) => write!(out, "GSWF({id})"),
+            Expr::LSWF(id) => write!(out, "LSWF({id})"),
+            Expr::GF(id) => write!(out, "GF({id})"),
+            Expr::LF(id) => write!(out, "LF({id})"),
+            Expr::GW(id) => write!(out, "GW({id})"),
+            Expr::LW(id) => write!(out, "LW({id})"),
             Expr::Immediate(val, is_hex) => {
                 if *is_hex {
-                    write!(f, "0x{:08x}", *val as u32)
+                    write!(out, "0x{:08x}", *val as u32)
                 } else {
-                    write!(f, "{val}")
+                    write!(out, "{val}")
                 }
             }
         }
@@ -452,21 +458,22 @@ pub struct Instruction {
     pub args: Vec<Expr>,
 }
 
-impl sym::SymDisplay for Instruction {
-    fn fmt(
+impl interop::CDump<sym::AddrDumpCtx<'_>> for Instruction {
+    type Error = std::fmt::Error;
+
+    fn dump(
         &self,
-        f: &mut std::fmt::Formatter<'_>,
-        symdb: &sym::SymbolDatabase,
-        area: u32,
-    ) -> std::fmt::Result {
-        write!(f, "{}(", self.opc)?;
+        out: &mut interop::Dumper,
+        ctx: &sym::AddrDumpCtx,
+    ) -> Result<(), Self::Error> {
+        write!(out, "{}(", self.opc)?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
-                write!(f, ", ")?;
+                write!(out, ", ")?;
             }
-            arg.fmt(f, symdb, area)?;
+            arg.dump(out, ctx)?;
         }
-        write!(f, ")")
+        write!(out, ")")
     }
 }
 
@@ -556,18 +563,19 @@ impl<'a> IntoIterator for &'a Script {
     }
 }
 
-impl sym::SymDisplay for Script {
-    fn fmt(
+impl interop::CDump<sym::AddrDumpCtx<'_>> for Script {
+    type Error = std::fmt::Error;
+
+    fn dump(
         &self,
-        f: &mut std::fmt::Formatter<'_>,
-        symdb: &sym::SymbolDatabase,
-        area: u32,
-    ) -> std::fmt::Result {
+        out: &mut interop::Dumper,
+        ctx: &sym::AddrDumpCtx,
+    ) -> Result<(), Self::Error> {
         let mut indent = 0;
         let mut off = 0;
-        write!(f, "EVENT_SCRIPT(\n")?;
+        write!(out, "EVENT_SCRIPT(\n")?;
         for insn in self {
-            write!(f, "/* {off:05} */ ")?;
+            write!(out, "/* {off:05} */ ")?;
 
             let (ind_out, ind_in) = match insn.opc.indent() {
                 OpcodeIndent::Passthrough
@@ -582,17 +590,17 @@ impl sym::SymDisplay for Script {
 
             indent -= ind_out;
             for _ in 0..indent {
-                write!(f, "  ")?;
+                write!(out, "  ")?;
             }
 
-            insn.fmt(f, symdb, area)?;
+            insn.dump(out, ctx)?;
             indent += ind_in;
 
-            write!(f, ",\n")?;
+            write!(out, ",\n")?;
             off += insn.size();
         }
 
-        write!(f, ")")
+        write!(out, ")")
     }
 }
 
@@ -738,6 +746,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
     pub fn dump_scripts(&self, symdb: &sym::SymbolDatabase) {
         let evt_scripts = self.evt_scripts.borrow();
         for (addr, script) in evt_scripts.iter() {
+            let area = self.overlay.backing().header().id.get();
             println!(
                 "{}: {}",
                 symdb.symbol_name(
@@ -747,11 +756,11 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                     ),
                     false,
                 ),
-                sym::SymContext::new(
+                sym::AddrDumpCtx::new(
+                    area,
+                    &interop::ctype!(mut [i32]),
                     symdb,
-                    self.overlay.backing().header().id.get(),
-                    script,
-                ),
+                ).to_string(script).expect("should format correctly")
             );
         }
     }

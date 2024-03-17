@@ -622,7 +622,7 @@ pub enum RawInsn<S> {
         sym: S,
         rtype: rel::RelocType,
         value: u32,
-    }, // TODO: ensure that a 16-bit reloc is on the second half-word
+    },
 }
 
 impl<S: Clone> RawInsn<S> {

@@ -8,7 +8,7 @@ use num::FromPrimitive;
 
 use error::mk_err_wrapper;
 
-use crate::utils::SaneSize;
+use crate::{sym, utils::SaneSize};
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
@@ -421,12 +421,31 @@ pub enum RelocBacking {
     Val32(u32),
 }
 
+impl From<RelocBacking> for u32 {
+    fn from(value: RelocBacking) -> Self {
+        match value {
+            RelocBacking::Val16(v) => v.into(),
+            RelocBacking::Val32(v) => v,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct RelocSymbol {
     pub file: u32,
     pub target: SectionAddr,
     pub rtype: ppcdis::RelocType,
     pub orig: Option<RelocBacking>,
+}
+
+impl RelocSymbol {
+    pub fn get_address(&self) -> sym::SymAddr {
+        if self.file == 0 {
+            sym::SymAddr::Dol(self.target.offset)
+        } else {
+            sym::SymAddr::Rel(self.file, self.target)
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]

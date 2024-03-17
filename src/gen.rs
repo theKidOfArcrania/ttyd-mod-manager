@@ -278,7 +278,11 @@ impl Data {
         let value = if let sym::SectionType::Bss = sec_type {
             None
         } else {
-            let addr_ctx = sym::AddrDumpCtx::new(&vartype, symdb);
+            let addr_ctx = sym::AddrDumpCtx::new(
+                overlay.backing().header().id.get(),
+                &vartype,
+                symdb,
+            );
             Some(match self {
                 Data::AsmFunc(_) => todo!(),
                 Data::CFunc(_) => todo!(),
@@ -291,12 +295,7 @@ impl Data {
                 },
                 Data::Double(dt) => interop::dumps(dt, &())?,
                 Data::Zero(dt) => interop::dumps(dt, &())?,
-                Data::Evt(dt) => sym::SymContext {
-                    symdb,
-                    area: overlay.backing().header().id.get(),
-                    val: dt,
-                }
-                .to_string(),
+                Data::Evt(dt) => interop::dumps(dt, &addr_ctx)?,
                 Data::Vec3(dt) => interop::dumps(dt, &())?,
                 Data::NpcSetupInfo(dt) => interop::dumps(dt, &symdb)?,
             })
