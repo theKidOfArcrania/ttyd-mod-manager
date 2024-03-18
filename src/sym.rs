@@ -568,8 +568,8 @@ impl SymbolDatabase {
             None => match addr {
                 SymAddr::Dol(0) => format!("NULL"),
                 SymAddr::Dol(addr) => format!("{ref_sym}lbl_{addr:08x}"),
-                SymAddr::Rel(sect, saddr) => {
-                    format!("{ref_sym}{}_sect_{sect}", saddr.var_name())
+                SymAddr::Rel(file, saddr) => {
+                    format!("{ref_sym}{}_file_{file}", saddr.var_name())
                 }
             },
         }
