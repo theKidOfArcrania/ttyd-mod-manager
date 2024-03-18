@@ -14,14 +14,16 @@ impl const Assert for B<true> {}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ErrorType {
-    #[error("Invalid instruction")]
-    InvalidInstruction,
+    #[error("Invalid instruction({0:#?})")]
+    InvalidInstruction(RawInsn<()>),
     #[error("Expected relative relocation value but got absolute instead")]
     BadAbsolute,
     #[error("Expected absolute relocation value but got relative instead")]
     BadRelative,
     #[error("#lo, #hi, #ha tagging requires immediate operand to be 16 bits")]
     NotBit16,
+    #[error("Found relocatable value while expect constant")]
+    ExpectValue,
 }
 
 mk_err_wrapper! {
@@ -40,7 +42,7 @@ impl<const BITS: u8> Display for Num<BITS> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Num<const BITS: u8>(u32);
 impl<const BITS: u8> Num<BITS> {
     pub const fn get_u8(self) -> u8 where
@@ -61,6 +63,13 @@ impl<const BITS: u8> Num<BITS> {
 
     pub const fn get_i32(self) -> i32 {
         ((self.0 << (32 - BITS)) as i32) >> (32 - BITS)
+    }
+
+    pub const fn get_num(self, signed: ImmOpType) -> Number {
+        match signed {
+            ImmOpType::U => Number::U(self.get_u32()),
+            ImmOpType::S => Number::S(self.get_i32()),
+        }
     }
 
     pub const fn get_usize(self) -> usize {
@@ -88,7 +97,7 @@ impl<const BITS: u8> Num<BITS> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SymTag {
     Reg, Lo, Hi, Ha
 }
@@ -104,8 +113,9 @@ impl Display for SymTag {
     }
 }
 
+#[derive(Debug)]
 pub enum RelValue<S, const BITS: u8> {
-    Value(Num<BITS>),
+    Value(ImmOpType, Num<BITS>),
     Symbol(S),
     SymbolLo(S),
     SymbolHi(S),
@@ -121,8 +131,12 @@ impl<Ctx, S, const BITS: u8> interop::CDump<Ctx> for RelValue<S, BITS> where
 
     fn dump(&self, f: &mut interop::Dumper, ctx: &Ctx) -> Result<(), Self::Error> {
         let (s, suff) = match self {
-            RelValue::Value(v) => {
-                write!(f, "{v}")?;
+            RelValue::Value(signed, v) => {
+                write!(
+                    f,
+                    "{}",
+                    v.get_num(*signed)
+                )?;
                 return Ok(())
             },
             RelValue::Symbol(s) => (s, ""),
@@ -148,7 +162,7 @@ impl<S, const BITS: u8> RelValue<S, BITS> {
         F: Fn(Num<BITS>) -> Num<BITS_NEW>,
     {
         match self {
-            RelValue::Value(v) => RelValue::Value(mapper(v)),
+            RelValue::Value(signed, v) => RelValue::Value(signed, mapper(v)),
             RelValue::Symbol(s) => RelValue::Symbol(s),
             RelValue::SymbolLo(s) => RelValue::SymbolLo(s),
             RelValue::SymbolHi(s) => RelValue::SymbolHi(s),
@@ -159,7 +173,7 @@ impl<S, const BITS: u8> RelValue<S, BITS> {
     }
 
     pub fn val(&self) -> Option<Num<BITS>> {
-        if let Self::Value(v) = self {
+        if let Self::Value(_, v) = self {
             Some(*v)
         } else {
             None
@@ -193,7 +207,7 @@ pub enum RegOpType {
     U_,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ImmOpType {
     /// Unsigned
     U,
@@ -643,19 +657,67 @@ pub enum RawInsn<S> {
     },
 }
 
+impl<S: std::fmt::Debug> std::fmt::Debug for RawInsn<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            match self {
+                Self::Concrete(val) => write!(f, "{val:08x}"),
+                Self::Rel { sym: _, rtype, value } => {
+                    let mut tmp = format!("{value:08x}").as_bytes().to_vec();
+                    let sym_mask = rtype.mask();
+                    for i in 0..8 {
+                        if (sym_mask >> (i * 4)) & 0xf != 0 {
+                            tmp[7 - i] = b'?';
+                        }
+                    }
+                    write!(f, "{}", unsafe {
+                        std::str::from_utf8_unchecked(&tmp)
+                    })
+                }
+            }
+        } else {
+            match self {
+                Self::Concrete(arg0) => f.debug_tuple("Concrete")
+                    .field(arg0)
+                    .finish(),
+                Self::Rel { sym, rtype, value } => f
+                    .debug_struct("Rel")
+                    .field("sym", sym)
+                    .field("rtype", rtype)
+                    .field("value", value)
+                    .finish(),
+            }
+
+        }
+    }
+}
+
 impl<S: Clone> RawInsn<S> {
-    fn expect_val<const BITS: u8>(&self, from: u8) -> Num<BITS> {
-        self.get(from).val().expect("throw error")
+    fn desym(&self) -> RawInsn<()> {
+        match self {
+            RawInsn::Concrete(v) => RawInsn::Concrete(*v),
+            &RawInsn::Rel { sym: _, rtype, value } => RawInsn::Rel {
+                sym: (),
+                rtype,
+                value,
+            },
+        }
     }
 
-    fn get<const BITS: u8>(&self, from: u8) -> RelValue<S, BITS> {
+    fn expect_val<const BITS: u8>(&self, from: u8) -> Res<Num<BITS>> {
+        self.get(ImmOpType::U, from)
+            .val()
+            .ok_or_else(|| error!(ExpectValue))
+    }
+
+    fn get<const BITS: u8>(&self, signed: ImmOpType, from: u8) -> RelValue<S, BITS> {
         const MASK_14_32: u32 = 0x0000fffc;
         const BIT_TAKEN: u32 = 1 << 21;
 
         let shf = 32 - (from + BITS);
         let mask = (1 << BITS) - 1;
         match self {
-            RawInsn::Concrete(v) => RelValue::Value(Num((v >> shf) & mask)),
+            RawInsn::Concrete(v) => RelValue::Value(signed, Num((v >> shf) & mask)),
             RawInsn::Rel {
                 sym,
                 rtype,
@@ -679,7 +741,7 @@ impl<S: Clone> RawInsn<S> {
                 let shf_rel_mask = (rel_mask >> shf) & mask;
                 if shf_rel_mask == 0 {
                     // Completly concrete value
-                    RelValue::Value(Num((value >> shf) & mask))
+                    RelValue::Value(signed, Num((value >> shf) & mask))
                 } else if shf_rel_mask == mask && BITS == rtype.reloc_bits() {
                     // Completly symbolic value
                     (match rtype {
@@ -709,6 +771,7 @@ impl<S: Clone> RawInsn<S> {
     }
 }
 
+#[derive(Debug)]
 pub struct Instruction<S> {
     pub base_name: &'static str,
     pub name: String,
@@ -720,13 +783,13 @@ fn lookup_insn<S: Clone>(raw: &RawInsn<S>) -> Res<(&'static str, InsnDesc)> {
     loop {
         class_tbl = match class_tbl {
             InsnClass::Ent(name, desc) => return Ok((name, desc)),
-            InsnClass::Unk => bail!(InvalidInstruction),
-            InsnClass::Dir1(ind, tbl) => tbl[raw.expect_val::<1>(ind).get_usize()],
-            InsnClass::Dir2(ind, tbl) => tbl[raw.expect_val::<2>(ind).get_usize()],
-            InsnClass::Dir4(ind, tbl) => tbl[raw.expect_val::<4>(ind).get_usize()],
-            InsnClass::Dir6(ind, tbl) => tbl[raw.expect_val::<6>(ind).get_usize()],
+            InsnClass::Unk => bail!(InvalidInstruction(raw.desym())),
+            InsnClass::Dir1(ind, tbl) => tbl[raw.expect_val::<1>(ind)?.get_usize()],
+            InsnClass::Dir2(ind, tbl) => tbl[raw.expect_val::<2>(ind)?.get_usize()],
+            InsnClass::Dir4(ind, tbl) => tbl[raw.expect_val::<4>(ind)?.get_usize()],
+            InsnClass::Dir6(ind, tbl) => tbl[raw.expect_val::<6>(ind)?.get_usize()],
             InsnClass::Dir10(ind, tbl) => {
-                *tbl.get(&raw.expect_val::<10>(ind).get_u16())
+                *tbl.get(&raw.expect_val::<10>(ind)?.get_u16())
                     .unwrap_or(&InsnClass::Unk)
             }
         };
@@ -744,6 +807,7 @@ pub struct Suffix {
     rc: bool,
 }
 
+#[derive(Debug)]
 pub enum Number {
     S(i32),
     U(u32),
@@ -758,6 +822,7 @@ impl Display for Number {
     }
 }
 
+#[derive(Debug)]
 pub enum Operand<S> {
     Reg(Num<5>),
     FReg(Num<5>),
@@ -800,48 +865,53 @@ impl<Ctx, S> interop::CDump<Ctx> for Operand<S> where
 
 const OPER_IND: [u8; 5] = [6, 11, 16, 21, 26];
 impl<S: Clone> Operand<S> {
-    pub fn mem_oper<const IMM_BITS: u8>(raw: &RawInsn<S>, op_ind: usize) -> Self
+    pub fn mem_oper<const IMM_BITS: u8>(raw: &RawInsn<S>, op_ind: usize) -> Res<Self>
     where
         B<{IMM_BITS <= 16}>: Assert
     {
-        let reg = raw.expect_val::<5>(OPER_IND[op_ind]);
-        let imm = raw.get(16);
-        if IMM_BITS == 16 {
-            Self::Mem(imm, reg)
+        let reg = raw.expect_val::<5>(OPER_IND[op_ind])?;
+        let imm = raw.get(ImmOpType::S, 16);
+        Ok(Self::Mem(if IMM_BITS == 16 {
+            imm
         } else {
-            Self::Mem(imm.map_num(|f| Num(f.0 & !((1<<(16-IMM_BITS)) - 1))), reg)
-        }
+            imm.map_num(|f| Num(f.0 & !((1<<(16-IMM_BITS)) - 1)))
+        }, reg))
     }
 
     pub fn reg_opers_opt<const SIZE: usize>(
         raw: &RawInsn<S>,
         reg: [Option<RegOpType>; SIZE],
         suffixes: &mut Suffix,
-    ) -> [Option<Self>; SIZE] {
-        let mut i = 0;
-        reg.map(|reg| {
-            let ret = reg.and_then(|reg| Self::reg_oper(raw, reg, i, suffixes));
-            i += 1;
-            ret
-        })
+    ) -> Res<[Option<Self>; SIZE]> {
+        let mut ret = [0; SIZE].map(|_| None);
+        for (i, reg) in reg.into_iter().enumerate() {
+            ret[i] = reg.and_then(|reg| {
+                Self::reg_oper(raw, reg, i, suffixes).transpose()
+            }).transpose()?;
+        }
+        Ok(ret)
     }
 
     pub fn reg_opers<const SIZE: usize>(
         raw: &RawInsn<S>,
         reg: [RegOpType; SIZE],
         suffixes: &mut Suffix,
-    ) -> [Option<Self>; SIZE] {
-        let mut i = 0;
-        reg.map(|reg| {
-            let ret = Self::reg_oper(raw, reg, i, suffixes);
-            i += 1;
-            ret
-        })
+    ) -> Res<[Option<Self>; SIZE]> {
+        let mut ret = [0; SIZE].map(|_| None);
+        for (i, reg) in reg.into_iter().enumerate() {
+            ret[i] = Self::reg_oper(raw, reg, i, suffixes)?;
+        }
+        Ok(ret)
     }
 
-    pub fn reg_oper(raw: &RawInsn<S>, reg: RegOpType, op_ind: usize, suffixes: &mut Suffix) -> Option<Self> {
-        let op = raw.expect_val::<5>(OPER_IND[op_ind]);
-        Some(match reg {
+    pub fn reg_oper(
+        raw: &RawInsn<S>,
+        reg: RegOpType,
+        op_ind: usize,
+        suffixes: &mut Suffix,
+    ) -> Res<Option<Self>> {
+        let op = raw.expect_val::<5>(OPER_IND[op_ind])?;
+        Ok(Some(match reg {
             RegOpType::C => Self::CRReg(op.bits::<2, 5>()),
             RegOpType::CL => {
                 if op.bit::<0>().get_bool() {
@@ -855,20 +925,20 @@ impl<S: Clone> Operand<S> {
             RegOpType::F => Self::FReg(op),
             RegOpType::N => Self::Num(false, Number::U(op.get_u32())),
             RegOpType::Oe => {
-                suffixes.oe = raw.expect_val(21).get_bool();
-                return None;
+                suffixes.oe = raw.expect_val(21)?.get_bool();
+                return Ok(None);
             }
             RegOpType::H => {
-                let sh_ext = raw.expect_val::<1>(30);
+                let sh_ext = raw.expect_val::<1>(30)?;
                 Self::Num(false, Number::U(sh_ext.combine(op).get_u32()))
             }
             RegOpType::U_ => Self::Num(false, Number::U(op.bits::<1, 5>().get_u32())),
             RegOpType::M64 => {
-                let mask_ext = raw.expect_val::<1>(OPER_IND[op_ind] + 5);
+                let mask_ext = raw.expect_val::<1>(OPER_IND[op_ind] + 5)?;
                 Self::Num(false, Number::U(mask_ext.combine(op).get_u32()))
             }
             RegOpType::Spr => {
-                let top = raw.expect_val::<5>(16);
+                let top = raw.expect_val::<5>(16)?;
                 Self::Num(
                     false,
                     Number::U(top.combine(op).get_u32()),
@@ -877,32 +947,28 @@ impl<S: Clone> Operand<S> {
             RegOpType::Fm => {
                 Self::Num(
                     false,
-                    Number::U(raw.expect_val::<8>(OPER_IND[op_ind] + 1).get_u32()),
+                    Number::U(raw.expect_val::<8>(OPER_IND[op_ind] + 1)?.get_u32()),
                 )
             }
-        })
+        }))
     }
 
     pub fn imm_oper<const BITS: u8>(
+        signed: ImmOpType,
         num: Num<BITS>,
-        imm: ImmOpType,
         aa: Option<bool>,
     ) -> Self {
-        let num = match imm {
-            ImmOpType::U => Number::U(num.get_u32()),
-            ImmOpType::S => Number::S(num.get_i32()),
-        };
-
-        Self::Num(!aa.unwrap_or(true), num)
+        Self::Num(!aa.unwrap_or(true), num.get_num(signed))
     }
 
-    pub fn from_imm_rel_oper<const BITS: u8>(
+    pub fn imm_rel_oper<const BITS: u8>(
         rel: RelValue<S, BITS>,
-        imm: ImmOpType,
         aa: Option<bool>,
     ) -> Res<Self> {
         let (is_rel, tag, s) = match rel {
-            RelValue::Value(v) => return Ok(Self::imm_oper(v, imm, aa)),
+            // TODO: if aa == Some(false) ensure that we are getting a relative
+            // address
+            RelValue::Value(signed, v) => return Ok(Self::imm_oper(signed, v, aa)),
             RelValue::Symbol(s) => (false, SymTag::Reg, Some(s)),
             RelValue::SymbolLo(s) => (false, SymTag::Lo, Some(s)),
             RelValue::SymbolHi(s) => (false, SymTag::Hi, Some(s)),
@@ -935,8 +1001,11 @@ impl<S: Clone> Instruction<S> {
         let mut suff = Suffix::default();
         let ops = match desc {
             InsnDesc::D(r1, r2, imm, swap) => {
-                let [r1, r2] = Operand::reg_opers(raw, [r1, r2], &mut suff);
-                let imm = Operand::imm_oper(raw.expect_val::<16>(16), imm, None);
+                let [r1, r2] = Operand::reg_opers(raw, [r1, r2], &mut suff)?;
+                let imm = Operand::imm_rel_oper(
+                    raw.get::<16>(imm, 16),
+                    None,
+                )?;
                 if swap {
                     vec![r2, r1, Some(imm)]
                 } else {
@@ -944,51 +1013,66 @@ impl<S: Clone> Instruction<S> {
                 }
             },
             InsnDesc::DMem(r1) => {
-                let r1 = Operand::reg_oper(raw, r1, 0, &mut suff);
-                let m2 = Some(Operand::mem_oper::<16>(raw, 1));
+                let r1 = Operand::reg_oper(raw, r1, 0, &mut suff)?;
+                let m2 = Some(Operand::mem_oper::<16>(raw, 1)?);
                 vec![r1, m2]
             },
             InsnDesc::DSMem(r1) => {
-                let r1 = Operand::reg_oper(raw, r1, 0, &mut suff);
-                let m2 = Operand::mem_oper::<14>(raw, 1);
+                let r1 = Operand::reg_oper(raw, r1, 0, &mut suff)?;
+                let m2 = Operand::mem_oper::<14>(raw, 1)?;
                 vec![r1, Some(m2)]
             },
             InsnDesc::B => {
-                suff.aa = raw.expect_val(30).get_bool();
-                suff.lk = raw.expect_val(31).get_bool();
-                let [bo, bi] = Operand::reg_opers(raw, [RegOpType::N; 2], &mut suff);
-                let bd = Operand::imm_oper(raw.expect_val::<14>(16), ImmOpType::S, Some(suff.aa));
+                suff.aa = raw.expect_val(30)?.get_bool();
+                suff.lk = raw.expect_val(31)?.get_bool();
+                let [bo, bi] = Operand::reg_opers(raw, [RegOpType::N; 2], &mut suff)?;
+                let bd = Operand::imm_rel_oper(
+                    raw.get::<14>(ImmOpType::S, 16)
+                        .map_num(|n| n.combine(Num::<2>(0))),
+                    Some(suff.aa),
+                )?;
                 vec![bo, bi, Some(bd)]
             },
             InsnDesc::I => {
-                suff.aa = raw.expect_val(30).get_bool();
-                suff.lk = raw.expect_val(31).get_bool();
-                let li = Operand::imm_oper(raw.expect_val::<24>(16), ImmOpType::S, Some(suff.aa));
+                suff.aa = raw.expect_val(30)?.get_bool();
+                suff.lk = raw.expect_val(31)?.get_bool();
+                let li = Operand::imm_rel_oper(
+                    raw.get::<24>(ImmOpType::S, 6)
+                        .map_num(|n| n.combine(Num::<2>(0))),
+                    Some(suff.aa),
+                )?;
                 vec![Some(li)]
             },
             InsnDesc::M(r1, r2, r3, r4, r5) => {
-                suff.rc = raw.expect_val(31).get_bool();
+                suff.rc = raw.expect_val(31)?.get_bool();
                 let [r1, r2, r3, r4] = Operand::reg_opers(
                     raw,
                     [r1, r2, r3, r4],
                     &mut suff,
-                );
-                let r5 = r5.and_then(|r5| Operand::reg_oper(raw, r5, 4, &mut suff));
+                )?;
+                let r5 = r5
+                    .and_then(|r5| {
+                        Operand::reg_oper(raw, r5, 4, &mut suff).transpose()
+                    })
+                    .transpose()?;
                 vec![r2, r1, r3, r4, r5]
             },
             InsnDesc::SC => {
-                let lev = Operand::Num(false, Number::U(raw.expect_val::<7>(20).get_u32()));
+                let lev = Operand::Num(
+                    false,
+                    Number::U(raw.expect_val::<7>(20)?.get_u32()),
+                );
                 vec![Some(lev)]
             }
             InsnDesc::AX(regs, flag, swap) => {
                 if let Some(flag) = flag {
-                    let flagval = raw.expect_val(31).get_bool();
+                    let flagval = raw.expect_val(31)?.get_bool();
                     match flag {
                         InsnFlag::Rc => suff.rc = flagval,
                         InsnFlag::Lk => suff.lk = flagval,
                     }
                 }
-                let [r1, r2, r3, r4] = Operand::reg_opers_opt(raw, regs, &mut suff);
+                let [r1, r2, r3, r4] = Operand::reg_opers_opt(raw, regs, &mut suff)?;
                 if swap {
                     vec![r2, r1, r4, r3]
                 } else {
@@ -1025,6 +1109,27 @@ impl<S: Clone> Instruction<S> {
                 .filter_map(|f| f)
                 .collect(),
         })
+    }
+}
+
+impl<Ctx, S> interop::CDump<Ctx> for Instruction<S> where
+    S: interop::CDump<Ctx>
+{
+    type Error = S::Error;
+
+    fn dump(
+        &self,
+        out: &mut interop::Dumper,
+        ctx: &Ctx,
+    ) -> Result<(), Self::Error> {
+        write!(out, "{} ", self.name)?;
+        for (i, op) in self.operands.iter().enumerate() {
+            if i > 0 {
+                write!(out, ", ")?;
+            }
+            op.dump(out, ctx)?;
+        }
+        Ok(())
     }
 }
 

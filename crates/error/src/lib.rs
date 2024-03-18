@@ -12,13 +12,30 @@ struct ErrorImpl<T: StdError> {
     backtrace: ::std::backtrace::Backtrace,
 }
 
-#[derive(Debug, Error)]
-#[error("{0}")]
+#[derive(Debug)]
 pub struct Error<T: StdError>(
-    #[source]
-    #[backtrace]
     Box<ErrorImpl<T>>,
 );
+
+impl<T: StdError> std::fmt::Display for Error<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&*self.0, f)
+    }
+}
+
+impl<T: StdError + 'static> std::error::Error for Error<T> {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.0.source()
+    }
+
+    fn cause(&self) -> Option<&dyn StdError> {
+        self.0.cause()
+    }
+
+    fn provide<'a>(&'a self, request: &mut std::error::Request<'a>) {
+        self.0.provide(request)
+    }
+}
 
 pub trait ErrorWrap {
     type E: std::error::Error;
@@ -62,8 +79,7 @@ macro_rules! mk_err_wrapper {
             type E = Error;
         }
 
-        #[derive(Debug, ::thiserror::Error)]
-        #[error(transparent)]
+        #[derive(Debug)]
         #[repr(transparent)]
         pub struct Error($crate::Error<$et>);
         impl ::core::ops::Deref for Error {
@@ -80,6 +96,12 @@ macro_rules! mk_err_wrapper {
             }
         }
 
+        impl ::std::fmt::Display for Error {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> std::fmt::Result {
+                ::std::fmt::Display::fmt(&self.0, f)
+            }
+        }
+
         impl Error {
             pub fn new(tp: $et) -> Self {
                 Self($crate::Error::new(tp))
@@ -91,6 +113,21 @@ macro_rules! mk_err_wrapper {
 
             pub fn unwrap(self) -> (std::backtrace::Backtrace, $et) {
                 self.0.unwrap()
+            }
+        }
+
+        impl ::std::error::Error for Error {
+            fn source(&self) -> Option<&(dyn ::std::error::Error + 'static)> {
+                self.0.source()
+            }
+
+            fn cause(&self) -> Option<&dyn ::std::error::Error> {
+                #[allow(deprecated)]
+                self.0.cause()
+            }
+
+            fn provide<'a>(&'a self, request: &mut ::std::error::Request<'a>) {
+                self.0.provide(request)
             }
         }
 

@@ -127,7 +127,7 @@ pub struct Definition {
     pub definition: String,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CTypePrim {
     Void,
     I8,
@@ -161,19 +161,19 @@ impl CTypePrim {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Field {
     pub name: String,
     pub tp: Box<CType>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CStruct {
     pub name: String,
     pub fields: Vec<Field>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Number {
     Signed(i64),
     Unsigned(u64),
@@ -202,13 +202,13 @@ impl Hash for Number {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Variant {
     pub name: String,
     pub value: Number,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CEnum {
     pub name: String,
     variants: Vec<Variant>,
@@ -247,7 +247,7 @@ impl CEnum {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CTDefType {
     Struct(CStruct),
     Enum(CEnum),
@@ -262,7 +262,7 @@ impl CTDefType {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CTypeKind {
     Prim(CTypePrim),
     TDef(Arc<CTDefType>),
@@ -271,7 +271,7 @@ pub enum CTypeKind {
     Ptr(Box<CType>),
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CType {
     pub kind: CTypeKind,
     pub const_: bool,

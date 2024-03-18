@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{clsdata, evt, reader, rel, sym};
+use crate::{clsdata, code, evt, reader, rel, sym};
 
 use error::mk_err_wrapper;
 
@@ -50,6 +50,7 @@ pub enum CodeLine {
         vartype: interop::CType,
         value: Option<String>,
     },
+    AsmFunc(String),
 }
 
 impl CodeLine {
@@ -57,6 +58,20 @@ impl CodeLine {
         match self {
             CodeLine::Variable { vartype, value } => {
                 vartype.make_decl(ident, value.clone(), local)
+            }
+            CodeLine::AsmFunc(code) => {
+                let decl = format!(
+                    "{}asm void {ident}()",
+                    if local {
+                        "static "
+                    } else {
+                        ""
+                    },
+                );
+                interop::Definition {
+                    definition: format!("{decl} {{\n{code}\n}}"),
+                    declare: Some(format!("{decl};")),
+                }
             }
         }
     }
@@ -148,7 +163,7 @@ impl interop::Size for Zeroed {
 
 #[derive(Debug)]
 pub enum Data {
-    AsmFunc(Vec<u8>),
+    AsmFunc(code::Code),
     CFunc(String),
     PtrArr(Vec<sym::SymAddr>),
     Ptr(sym::SymAddr),
@@ -180,12 +195,10 @@ impl Data {
                 sym::SimpleType::Double => {
                     Data::Double(reader.read_val_full()?)
                 }
-                sym::SimpleType::Zero => Data::Zero(reader.read_val_full()?),
+                sym::SimpleType::Zero
+                | sym::SimpleType::Unknown => Data::Zero(reader.read_val_full()?),
                 sym::SimpleType::Evt => Data::Evt(reader.read_val_full()?),
-                sym::SimpleType::Function => {
-                    // TODO:
-                    Data::Zero(reader.read_val_full()?)
-                }
+                sym::SimpleType::Function => Data::AsmFunc(reader.read_val_full()?),
                 sym::SimpleType::Vec3 => Data::Vec3(reader.read_val_full()?),
             },
             sym::DataType::Class(tp) => match tp {
@@ -284,7 +297,9 @@ impl Data {
                 symdb,
             );
             Some(match self {
-                Data::AsmFunc(_) => todo!(),
+                Data::AsmFunc(code) => {
+                    return Ok(CodeLine::AsmFunc(interop::dumps(code, &addr_ctx)?));
+                },
                 Data::CFunc(_) => todo!(),
                 Data::PtrArr(addrs) => interop::dumps(addrs, &addr_ctx)?,
                 Data::Ptr(addr) => interop::dumps(addr, &addr_ctx)?,

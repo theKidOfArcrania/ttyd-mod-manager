@@ -1,5 +1,4 @@
 use std::{
-    cell::OnceCell,
     collections::{BTreeSet, HashMap, HashSet},
     fmt::{self, Write as _},
     io,
@@ -30,6 +29,18 @@ pub enum SectionType {
 }
 
 impl SectionType {
+    pub fn is_exec(self) -> bool {
+        match self {
+            Self::Text => true,
+            Self::Data => false,
+            Self::Bss => false,
+            Self::Init => true,
+            Self::Rodata => false,
+            Self::Dtors => true,
+            Self::Ctors => true,
+        }
+    }
+
     pub fn is_ro(self) -> bool {
         match self {
             Self::Text => true,
@@ -55,6 +66,7 @@ pub enum SimpleType {
     Evt,
     Function,
     Vec3,
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -126,7 +138,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                 E: serde::de::Error,
             {
                 Ok(match v.chars().next() {
-                    None => DataType::Simple(SimpleType::Function),
+                    None => DataType::Simple(SimpleType::Unknown),
                     Some(c) => {
                         let de = v.into_deserializer();
                         if c.is_lowercase() {
@@ -312,6 +324,16 @@ impl RawSymtab {
             let record = record?;
             let mut ent: RawSymEntry = record.deserialize(Some(&headers))?;
 
+            // Make sure function entries do not exist in data
+            if ent.value_type == DataType::Simple(SimpleType::Unknown) &&
+                ent.sec_name.is_exec() {
+                    eprintln!(
+                        "WARNING: {} entry's type assumed to be function",
+                        ent.name,
+                    );
+                    ent.value_type = DataType::Simple(SimpleType::Function);
+            }
+
             // Mangle illegal characters
             if ent.name.chars().any(|c| replmap.contains_key(&c)) {
                 let mut ret = String::with_capacity(ent.name.capacity() * 2);
@@ -391,11 +413,12 @@ impl interop::CDump<SymbolDatabase> for SymAddr {
     }
 }
 
+#[derive(Clone)]
 pub struct AddrDumpCtx<'a> {
     area: u32,
-    var_type: &'a interop::CType,
     symdb: &'a SymbolDatabase,
-    cached: OnceCell<String>,
+    pointee_tp: Option<String>,
+    is_refs: bool,
 }
 
 impl<'a> AddrDumpCtx<'a> {
@@ -404,31 +427,36 @@ impl<'a> AddrDumpCtx<'a> {
         var_type: &'a interop::CType,
         symdb: &'a SymbolDatabase,
     ) -> Self {
+        let pointee_tp = var_type.get_pointee().map(|tp| {
+            match &tp.kind {
+                interop::CTypeKind::Prim(_) | interop::CTypeKind::TDef(_) => {
+                    "".into()
+                }
+                interop::CTypeKind::Array(_, _)
+                | interop::CTypeKind::PtrArray(_, _)
+                | interop::CTypeKind::Ptr(_) => format!("({tp}) "),
+            }
+        });
         Self {
             area,
-            var_type,
             symdb,
-            cached: OnceCell::new(),
+            pointee_tp,
+            is_refs: true,
         }
+    }
+
+    pub fn set_refs(&self, val: bool) -> Self {
+        let mut ret = self.clone();
+        ret.is_refs = val;
+        ret
     }
 
     pub fn area(&self) -> u32 {
         self.area
     }
 
-    pub fn cast_name(&self) -> &str {
-        self.cached.get_or_init(|| {
-            let pointee_tp =
-                self.var_type.get_pointee().expect("should have pointee");
-            match &pointee_tp.kind {
-                interop::CTypeKind::Prim(_) | interop::CTypeKind::TDef(_) => {
-                    "".into()
-                }
-                interop::CTypeKind::Array(_, _)
-                | interop::CTypeKind::PtrArray(_, _)
-                | interop::CTypeKind::Ptr(_) => format!("({pointee_tp}) "),
-            }
-        })
+    pub fn pointee_tp(&self) -> Option<&str> {
+        self.pointee_tp.as_ref().map(AsRef::as_ref)
     }
 
     pub fn symdb(&self) -> &SymbolDatabase {
@@ -452,8 +480,8 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         f: &mut interop::Dumper,
         ctx: &AddrDumpCtx<'a>,
     ) -> std::fmt::Result {
-        let cast = ctx.cast_name();
-        write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, true))
+        let cast = ctx.pointee_tp().unwrap_or("");
+        write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, ctx.is_refs))
     }
 }
 

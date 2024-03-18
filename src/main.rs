@@ -1,12 +1,10 @@
 #![feature(byte_slice_trim_ascii)]
 #![feature(lazy_cell)]
 #![feature(generic_const_exprs)]
+#![feature(error_generic_member_access)]
 #![allow(incomplete_features)]
 use std::{
-    collections::{BTreeSet, HashMap},
-    fs::{self, File},
-    io::Write,
-    path::{Path, PathBuf},
+    collections::{BTreeSet, HashMap}, fs::{self, File}, io::Write, path::{Path, PathBuf}
 };
 
 use anyhow::bail;
@@ -14,6 +12,7 @@ use clap::{Parser, Subcommand};
 
 extern crate num_derive;
 
+mod code;
 mod clsdata;
 mod evt;
 mod gen;
