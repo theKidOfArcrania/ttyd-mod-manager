@@ -11,5 +11,6 @@ error = { path = "../error" }
 thiserror = "1.0.58"
 serde_yaml = "0.9.32"
 serde = { version = "1.0.197", features = ["derive"] }
+interop = { path = "../interop" }
 
 [dev-dependencies]

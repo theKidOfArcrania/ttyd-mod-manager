@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write as _},
+    sync::LazyLock,
+};
 use error::mk_err_wrapper;
 
 use crate::rel;
@@ -110,17 +114,31 @@ pub enum RelValue<S, const BITS: u8> {
     Unknown,
 }
 
-impl<S: Display, const BITS: u8> Display for RelValue<S, BITS> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RelValue::Value(v) => write!(f, "{v}"),
-            RelValue::Symbol(s) => write!(f, "{s}"),
-            RelValue::SymbolLo(s) => write!(f, "{s}#lo"),
-            RelValue::SymbolHi(s) => write!(f, "{s}#hi"),
-            RelValue::SymbolHa(s) => write!(f, "{s}#ha" ),
-            RelValue::SymbolRel(s) => write!(f, "{s}" ),
-            RelValue::Unknown => write!(f, "#UNK"),
-        }
+impl<Ctx, S, const BITS: u8> interop::CDump<Ctx> for RelValue<S, BITS> where
+    S: interop::CDump<Ctx>
+{
+    type Error = S::Error;
+
+    fn dump(&self, f: &mut interop::Dumper, ctx: &Ctx) -> Result<(), Self::Error> {
+        let (s, suff) = match self {
+            RelValue::Value(v) => {
+                write!(f, "{v}")?;
+                return Ok(())
+            },
+            RelValue::Symbol(s) => (s, ""),
+            RelValue::SymbolLo(s) => (s, "#lo"),
+            RelValue::SymbolHi(s) => (s, "#hi"),
+            RelValue::SymbolHa(s) => (s, "#ha"),
+            RelValue::SymbolRel(s) => (s, ""),
+            RelValue::Unknown => {
+                write!(f, "#UNK")?;
+                return Ok(());
+            }
+        };
+
+        s.dump(f, ctx)?;
+        write!(f, "{suff}")?;
+        Ok(())
     }
 }
 
@@ -751,19 +769,31 @@ pub enum Operand<S> {
     Sym(bool, SymTag, Option<S>),
 }
 
-impl<S: Display> Display for Operand<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<Ctx, S> interop::CDump<Ctx> for Operand<S> where
+    S: interop::CDump<Ctx>
+{
+    type Error = S::Error;
+
+    fn dump(&self, f: &mut interop::Dumper, ctx: &Ctx) -> Result<(), Self::Error> {
         match self {
-            Operand::Reg(r) => write!(f, "r{r}"),
-            Operand::FReg(r) => write!(f, "{r}"),
-            Operand::CRReg(r) => write!(f, "{r}"),
-            Operand::Mem(off, r) => write!(f, "{off}(r{r})"),
-            Operand::Num(_, off) => write!(f, "{off}"),
+            Operand::Reg(r) => write!(f, "r{r}")?,
+            Operand::FReg(r) => write!(f, "{r}")?,
+            Operand::CRReg(r) => write!(f, "{r}")?,
+            Operand::Mem(off, r) => {
+                off.dump(f, ctx)?;
+                write!(f, "(r{r})")?;
+            }
+            Operand::Num(_, off) => write!(f, "{off}")?,
             Operand::Sym(_, tag, s) => match s {
-                None => write!(f, "#UNK"),
-                Some(s) => write!(f, "{s}{tag}"),
+                None => write!(f, "#UNK")?,
+                Some(s) => {
+                    s.dump(f, ctx)?;
+                    write!(f, "{tag}")?;
+                }
             },
         }
+
+        Ok(())
     }
 }
 
@@ -1000,11 +1030,27 @@ impl<S: Clone> Instruction<S> {
 
 #[cfg(test)]
 mod test {
+
     use std::{error::Error, fs::File};
 
     use serde::Deserialize;
 
     use super::{Instruction, RawInsn};
+
+    #[derive(Clone)]
+    enum X {}
+
+    impl<T> interop::CDump<T> for X {
+        type Error = std::fmt::Error;
+
+        fn dump(
+            &self,
+            _out: &mut interop::Dumper,
+            _ctx: &T,
+        ) -> Result<(), Self::Error> {
+            match *self {}
+        }
+    }
 
     #[derive(Deserialize)]
     struct TestCases {
@@ -1024,13 +1070,13 @@ mod test {
         for test in tests.decode_tests {
             println!("Testing: {}", test.insn);
 
-            let insn = Instruction::parse(&RawInsn::<String>::Concrete(test.opcode))?;
+            let insn = Instruction::parse(&RawInsn::<X>::Concrete(test.opcode))?;
             assert_eq!(test.insn, insn.name);
             assert_eq!(
                 test.operands,
                 insn.operands
                     .iter()
-                    .map(ToString::to_string)
+                    .map(|s| interop::dumps(s, &()).expect("no format error"))
                     .collect::<Vec<_>>(),
             );
         }

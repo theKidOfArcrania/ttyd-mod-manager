@@ -418,6 +418,7 @@ name = "ppcdis"
 version = "0.1.0"
 dependencies = [
  "error",
+ "interop",
  "num",
  "num-derive",
  "num-traits",
