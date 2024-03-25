@@ -80,6 +80,7 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
     #[allow(non_upper_case_globals)]
     const evt: usize = 3;
     CCodeTemplate {
+        name: "prolog",
         templ: TemplateRegExp::Concat(&[
             TemplateRegExp::Fragment(CCodeTemplateFragment {
                 snippets: &templated!(
@@ -143,6 +144,7 @@ static EPILOG_TEMPL: CCodeTemplate<'static> = {
     #[allow(non_upper_case_globals)]
     const dtors: usize = 1;
     CCodeTemplate {
+        name: "epilog",
         templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
             snippets: &templated!(
                 concat!(
@@ -182,6 +184,7 @@ static EPILOG_TEMPL: CCodeTemplate<'static> = {
 };
 
 static STUB_TEMPL: CCodeTemplate<'static> = CCodeTemplate {
+    name: "stub",
     templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
         snippets: &templated!("    // stub function"),
         asm: &insns!(bclr 20, 0;),
@@ -190,20 +193,98 @@ static STUB_TEMPL: CCodeTemplate<'static> = CCodeTemplate {
     return_type: "void",
 };
 
+static MAP_DELETE_TEMPL: CCodeTemplate<'static> = {
+    #[allow(non_upper_case_globals)]
+    const wp: usize = 0;
+    #[allow(non_upper_case_globals)]
+    const fileFree: usize = 1;
+    CCodeTemplate {
+        name: "mapdelete",
+        templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
+            snippets: &templated!(
+                concat!(
+                    "    if ({wp} != NULL && {wp}->texture != NULL) {{\n",
+                    "        {fileFree}({wp}->texture);\n",
+                    "    }}",
+                )
+            ),
+            asm: &insns!(
+                stwu r1, [s -16, r1];
+                mfspr r0, 8;
+                addis r3, r0, [wp@ha];
+                stw r0, [s 20, r1];
+                addi r3, r3, [wp@lo];
+                lwz r3, [s 0, r3];
+                cmplwi 0, r3, 0;
+                bc 12, 2, 20;
+                lwz r3, [s 0, r3];
+                cmplwi 0, r3, 0;
+                bc 12, 2, 8;
+                bl [fileFree@@rel];
+                lwz r0, [s 20, r1];
+                mtspr 8, r0;
+                addi r1, r1, 16;
+                bclr 20, 0;
+            ),
+        }),
+        args: &[],
+        return_type: "void",
+    }
+};
+
 static DEFAULT_SIGS: &[&'static CCodeTemplate<'static>] = &[
     &PROLOG_TEMPL,
     &EPILOG_TEMPL,
     &STUB_TEMPL,
+    &MAP_DELETE_TEMPL,
 ];
 
 impl Code {
-    pub fn find_default_sig(&self, base_addr: sym::SymAddr) -> Option<CCode> {
+    pub fn find_default_sig(
+        &self,
+        base_addr: sym::SymAddr,
+        symdb: &sym::SymbolDatabase,
+    ) -> Option<CCode> {
         for sig in DEFAULT_SIGS {
             if let Some(res) = self.match_template(sig, base_addr) {
                 return Some(res);
             }
         }
 
+        let mut fuzzy_matched = false;
+        for sig in DEFAULT_SIGS {
+            let res = self.match_fuzzy_template(sig, base_addr);
+            if res.insn_count != 0 {
+                let fuzzy = 100.0 - res.edit_dist as f32 / (res.insn_count *
+                    EDIT_INSN_UNIT) as f32 * 100.0;
+                fuzzy_matched = true;
+                eprintln!(
+                    "WARNING: {} does not match any signatures, but fuzzy matches `{}` \
+                    at {fuzzy:.2}% ({})",
+                    symdb.symbol_name(base_addr, false),
+                    sig.name,
+                    res.edit_dist,
+                )
+            }
+        }
+        if fuzzy_matched {
+            let area = match base_addr {
+                sym::SymAddr::Dol(_) => 0,
+                sym::SymAddr::Rel(area, _) => area,
+            };
+            let strings = sym::StringsMap::default();
+            let ctx = sym::AddrDumpCtx::new(
+                area,
+                &interop::ctype!(mut [i32]),
+                symdb,
+                &strings,
+            );
+            let asm = match interop::dumps(self, &ctx) {
+                Ok(s) => s,
+                Err(_) => "<error>".into(),
+            };
+            eprintln!("  for reference, here is the code:\n{asm}");
+        }
         None
     }
 }

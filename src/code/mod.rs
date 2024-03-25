@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, fmt::Write as _};
+use std::{cmp::min, collections::{HashMap, VecDeque}, fmt::Write as _};
 
 use interop::{CDump, Size};
 
@@ -7,6 +7,9 @@ use templated::templated;
 use crate::{rel, sym};
 
 mod sigs;
+
+pub const EDIT_INSN_UNIT: usize = 5;
+pub const FUZZY_THRESHOLD: f32 = 0.2;
 
 impl interop::CRead<sym::SymAddr> for ppcdis::Instruction<sym::SymAddr> {
     fn read<R>(reader: &mut R) -> Result<Self, R::Error>
@@ -160,6 +163,7 @@ pub enum TemplateRegExp<'a> {
 }
 
 pub struct CCodeTemplate<'a> {
+    name: &'a str,
     templ: TemplateRegExp<'a>,
     args: &'a [&'a str],
     return_type: &'a str,
@@ -252,6 +256,99 @@ impl<S> From<ppcdis::Operand<S>> for SimpleOperand<S> {
 impl Size for CCode {
     fn len(&self) -> usize {
         self.size
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct FuzzyResult {
+    pub edit_dist: usize,
+    pub insn_count: usize,
+}
+
+fn insn_edit_distance(
+    template: &InsnTempl,
+    target: &ppcdis::Instruction<sym::SymAddr>,
+) -> usize {
+    if template.operands.len() != target.operands.len() {
+        return EDIT_INSN_UNIT;
+    }
+
+    let mut unmatches = 0;
+    let mut nomatches = true;
+    if template.name != target.name {
+        unmatches += 2;
+    } else {
+        nomatches = false;
+    }
+    for (op_templ, op) in template.operands.iter().zip(target.operands.iter()) {
+        let templ_simp = SimpleOperand::from(op_templ.clone());
+        let actual_simp = SimpleOperand::from(op.clone());
+        let unified = templ_simp.unify(actual_simp, &mut |_symid, _actual| {
+            // NOTE: fuzzy match does not care about symbol mapping. This may
+            // give an artificially high match
+            true
+        });
+
+        if unified {
+            nomatches = false;
+        } else {
+            unmatches += 1;
+        }
+    }
+
+    if nomatches {
+        EDIT_INSN_UNIT
+    } else {
+        min(EDIT_INSN_UNIT, unmatches)
+    }
+}
+
+fn match_fuzzy_fragment(
+    insns: &[ppcdis::Instruction<sym::SymAddr>],
+    templ: CCodeTemplateFragment,
+    // TODO:
+    //output: &mut Vec<(String, Option<sym::SymAddr>)>,
+) -> FuzzyResult {
+    let mut matrix = Vec::new();
+    matrix.push((0..=insns.len())
+        .map(|v| v * EDIT_INSN_UNIT)
+        .collect::<Vec<_>>());
+    for ind_templ in 0..templ.asm.len() {
+        let mut row = Vec::with_capacity(insns.len());
+        row.push(EDIT_INSN_UNIT + matrix[ind_templ][0]);
+        for ind_check in 0..insns.len() {
+            let edit_dist = insn_edit_distance(
+                &templ.asm[ind_templ],
+                &insns[ind_check],
+            );
+            row.push(if edit_dist == 0 {
+                matrix[ind_templ][ind_check]
+            } else {
+                min(
+                    edit_dist + matrix[ind_templ][ind_check],
+                    EDIT_INSN_UNIT + min(
+                        row[ind_check],
+                        matrix[ind_templ][ind_check + 1],
+                    ),
+                )
+            });
+        }
+        matrix.push(row);
+    }
+
+    let mut min_edit = usize::MAX;
+    let mut insn_count = 0;
+    for ind_check in 0..=insns.len() {
+        let cur_edit = matrix[templ.asm.len()][ind_check];
+        if min_edit > cur_edit {
+            min_edit = cur_edit;
+            insn_count = ind_check;
+        }
+    }
+
+    FuzzyResult {
+        edit_dist: min_edit,
+        insn_count,
     }
 }
 
@@ -357,6 +454,7 @@ struct RegexState<'a> {
     insns: &'a[ppcdis::Instruction<sym::SymAddr>],
     cur_addr: sym::SymAddr,
     output: Vec<(String, Option<sym::SymAddr>)>,
+    fuzzy_res: FuzzyResult,
 }
 
 impl<'a> RegexState<'a> {
@@ -368,6 +466,7 @@ impl<'a> RegexState<'a> {
             insns,
             cur_addr,
             output: Vec::new(),
+            fuzzy_res: FuzzyResult::default(),
         }
     }
 
@@ -375,7 +474,10 @@ impl<'a> RegexState<'a> {
         self.insns.is_empty() && regex.matches_nil()
     }
 
-    fn step(mut self, regex: &Regex<'a>) -> Vec<(Self, Regex<'a>)> {
+    fn step(
+        mut self,
+        regex: &Regex<'a>,
+    ) -> Vec<(Self, Regex<'a>)> {
         match regex {
             Regex::Epsilon => Vec::new(),
             Regex::Fragment(frag) => {
@@ -391,6 +493,82 @@ impl<'a> RegexState<'a> {
                     vec![(self, Regex::Epsilon)]
                 } else {
                     Vec::new()
+                }
+            }
+            Regex::Rep(inner) => {
+                let star = Regex::Rep(inner.clone());
+                self.step(inner)
+                    .into_iter()
+                    .map(|(st, reg)| (st, Regex::Concat(vec![reg, star.clone()])))
+                    .collect()
+            }
+            Regex::Concat(parts) => {
+                let mut ret = Vec::new();
+                for (i, part) in parts.iter().enumerate() {
+                    let part_mod = self.clone().step(part);
+                    if i + 1 == parts.len() {
+                        ret.extend(part_mod);
+                    } else {
+                        for (st, regex_part) in part_mod {
+                            let mut concat = Vec::with_capacity(parts.len());
+                            concat.push(regex_part);
+                            concat.extend_from_slice(&parts[i + 1..]);
+                            ret.push((st, Regex::Concat(concat)));
+                        }
+                    }
+
+                    if !part.matches_nil() {
+                        break;
+                    }
+                }
+                ret
+            }
+            Regex::Or(choices) => {
+                let mut ret = Vec::with_capacity(choices.len());
+                for choice in choices {
+                    ret.extend(self.clone().step(choice));
+                }
+                ret
+            }
+        }
+    }
+
+    fn step_fuzzy(
+        mut self,
+        regex: &Regex<'a>,
+    ) -> Vec<(Self, Regex<'a>)> {
+        match regex {
+            Regex::Epsilon => vec![],
+            Regex::Fragment(frag) => {
+                let matches = frag.asm.len() <= self.insns.len() && match_fragment(
+                    &self.insns[..frag.asm.len()],
+                    *frag,
+                    self.cur_addr,
+                    &mut self.output,
+                );
+                if matches {
+                    self.cur_addr += frag.asm.len() as u32 * 4;
+                    self.insns = &self.insns[frag.asm.len()..];
+                    self.fuzzy_res.insn_count += frag.asm.len();
+                    vec![(self, Regex::Epsilon)]
+                } else {
+                    let res = match_fuzzy_fragment(
+                        &self.insns,
+                        *frag,
+                    );
+                    self.fuzzy_res.edit_dist += res.edit_dist;
+                    self.fuzzy_res.insn_count += res.insn_count;
+                    if res.insn_count > 0 &&
+                        (self.fuzzy_res.edit_dist as f32 /
+                        (self.fuzzy_res.insn_count * EDIT_INSN_UNIT) as f32) <
+                        FUZZY_THRESHOLD
+                    {
+                        self.cur_addr += self.fuzzy_res.insn_count as u32 * 4;
+                        self.insns = &self.insns[self.fuzzy_res.insn_count..];
+                        vec![(self, Regex::Epsilon)]
+                    } else {
+                        Vec::new()
+                    }
                 }
             }
             Regex::Rep(inner) => {
@@ -453,6 +631,23 @@ impl Code {
         }
 
         return None;
+    }
+
+    fn match_fuzzy_template(
+        &self,
+        templ: &CCodeTemplate,
+        base: sym::SymAddr,
+    ) -> FuzzyResult {
+        let mut queue = VecDeque::new();
+        queue.push_back((RegexState::new(&self.insns, base), templ.templ.into()));
+        while let Some((st, regex)) = queue.pop_front() {
+            if st.done(&regex) {
+                return st.fuzzy_res;
+            }
+            queue.extend(st.step_fuzzy(&regex));
+        }
+
+        return FuzzyResult::default();
     }
 }
 

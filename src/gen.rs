@@ -236,14 +236,16 @@ impl Data {
     pub fn read(
         overlay: &rel::RelocOverlay,
         ent: &sym::RawSymEntry,
+        symdb: &sym::SymbolDatabase,
     ) -> Res<Self> {
-        Data::read_no_provide(overlay, ent)
+        Data::read_no_provide(overlay, ent, symdb)
             .map_err(|e| e.provide_sym(ent))
     }
 
     fn read_no_provide(
         overlay: &rel::RelocOverlay,
         ent: &sym::RawSymEntry,
+        symdb: &sym::SymbolDatabase,
     ) -> Res<Self> {
         let mut reader = reader::Reader::new(overlay, ent);
         let res = match ent.value_type {
@@ -268,7 +270,7 @@ impl Data {
                         ent.section_addr(),
                     );
                     let asm: code::Code = reader.read_val_full()?;
-                    match asm.find_default_sig(base_addr) {
+                    match asm.find_default_sig(base_addr, symdb) {
                         None => Data::AsmFunc(asm),
                         Some(cfunc) => Data::CFunc(cfunc),
                     }
@@ -295,7 +297,7 @@ impl Data {
                     let cur_pointee = symdb
                         .get(*addr)
                         .and_then(|sym| {
-                            Some(Data::read(overlay, &sym).ok()?.get_type(
+                            Some(Data::read(overlay, &sym, symdb).ok()?.get_type(
                                 sym.sec_name,
                                 overlay,
                                 symdb,
@@ -323,7 +325,7 @@ impl Data {
                 let pointee = symdb
                     .get(*addr)
                     .and_then(|sym| {
-                        Some(Data::read(overlay, &sym).ok()?.get_type(
+                        Some(Data::read(overlay, &sym, symdb).ok()?.get_type(
                             sym.sec_name,
                             overlay,
                             symdb,
@@ -426,7 +428,7 @@ pub fn generate_line(
         overlay.backing().header().id.get(),
         ent.section_addr(),
     );
-    let dat = Data::read(overlay, ent)?;
+    let dat = Data::read(overlay, ent, symdb)?;
     let code_line = dat.to_code(ent.sec_name, overlay, symdb, strings)
         .map_err(|e| e.provide_sym(ent))?;
     let symbol_name = symdb.symbol_name(addr, false);

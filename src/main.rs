@@ -399,7 +399,7 @@ fn main() -> Result<(), anyhow::Error> {
                         {
                             strings.insert(
                                 sym::SymAddr::Rel(area_id, ent.section_addr()),
-                                match gen::Data::read(&overlay, ent)? {
+                                match gen::Data::read(&overlay, ent, &symdb)? {
                                     gen::Data::String(val) => {
                                         val.0
                                     }

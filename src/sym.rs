@@ -374,6 +374,19 @@ impl interop::Ptr for SymAddr {
     type Rel<T> = rel::Symbol<T>;
 }
 
+impl SymAddr {
+    pub fn name(&self, is_ref: bool) -> String {
+        let ref_sym = if is_ref { "&" } else { "" };
+        match self {
+            SymAddr::Dol(0) => format!("NULL"),
+            SymAddr::Dol(addr) => format!("{ref_sym}lbl_{addr:08x}"),
+            SymAddr::Rel(file, saddr) => {
+                format!("{ref_sym}{}_file_{file}", saddr.var_name())
+            }
+        }
+    }
+}
+
 impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
     fn get_type(&self) -> interop::SymbolicType<&T, SymAddr> {
         use interop::SymbolicType::*;
@@ -423,7 +436,7 @@ pub struct AddrDumpCtx<'a> {
 impl<'a> AddrDumpCtx<'a> {
     pub fn new(
         area: u32,
-        var_type: &'a interop::CType,
+        var_type: &interop::CType,
         symdb: &'a SymbolDatabase,
         strings: &'a StringsMap,
     ) -> Self {
@@ -571,13 +584,7 @@ impl SymbolDatabase {
         let ref_sym = if is_ref { "&" } else { "" };
         match self.name_of(addr) {
             Some(name) => format!("{ref_sym}{name}"),
-            None => match addr {
-                SymAddr::Dol(0) => format!("NULL"),
-                SymAddr::Dol(addr) => format!("{ref_sym}lbl_{addr:08x}"),
-                SymAddr::Rel(file, saddr) => {
-                    format!("{ref_sym}{}_file_{file}", saddr.var_name())
-                }
-            },
+            None => addr.name(is_ref),
         }
     }
 
