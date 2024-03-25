@@ -4,6 +4,8 @@ use std::{
     fmt::{self, Display, LowerExp, Write},
 };
 
+const WRAP_LIST_LEN: usize = 80;
+
 #[derive(Default)]
 pub struct Dumper {
     res: String,
@@ -101,13 +103,30 @@ where
     E: From<fmt::Error>,
 {
     write!(f, "{{")?;
-    for (i, elem) in iter.enumerate() {
-        if i > 0 {
-            write!(f, ", ")?;
-        }
-        elem.dump(f, ctx)?;
+    let mut elems = Vec::new();
+    let mut max_size = 0;
+    for elem in iter {
+        let mut nested = Dumper::default();
+        elem.dump(&mut nested, ctx)?;
+        max_size = max_size.max(nested.res.len());
+        elems.push(nested);
     }
-    write!(f, "}}")?;
+    for (i, elem) in elems.into_iter().enumerate() {
+        if i > 0 {
+            write!(f, ",")?;
+        }
+        if max_size > WRAP_LIST_LEN {
+            write!(f, "\n  {}", elem.res)?;
+        } else {
+            write!(f, " {}", elem.res)?;
+        }
+    }
+    if max_size > WRAP_LIST_LEN {
+        write!(f, "\n}}")?
+    } else {
+        write!(f, "}}")?
+    }
+
     Ok(())
 }
 
