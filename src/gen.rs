@@ -81,7 +81,11 @@ impl CodeLine {
             CodeLine::Func { .. } => 1,
         }
     }
-    pub fn gen(&self, ident: String, local: bool) -> interop::Definition {
+    pub fn gen(
+        &self,
+        ident: String,
+        local: bool,
+    ) -> interop::Definition {
         let order = self.order();
         match self {
             CodeLine::Variable { vartype, value } => {
@@ -351,6 +355,7 @@ impl Data {
         sec_type: sym::SectionType,
         overlay: &rel::RelocOverlay,
         symdb: &sym::SymbolDatabase,
+        strings: &sym::StringsMap,
     ) -> Res<CodeLine> {
         let vartype = self.get_type(sec_type, overlay, symdb);
         let value = if let sym::SectionType::Bss = sec_type {
@@ -360,6 +365,7 @@ impl Data {
                 overlay.backing().header().id.get(),
                 &vartype,
                 symdb,
+                strings,
             );
             Some(match self {
                 Data::AsmFunc(code) => {
@@ -383,7 +389,7 @@ impl Data {
                 Data::Zero(dt) => interop::dumps(dt, &())?,
                 Data::Evt(dt) => interop::dumps(dt, &addr_ctx)?,
                 Data::Vec3(dt) => interop::dumps(dt, &())?,
-                Data::Struct(dt) =>  interop::dumps(dt, &symdb)?,
+                Data::Struct(dt) =>  interop::dumps(dt, &addr_ctx)?,
             })
         };
 
@@ -414,13 +420,14 @@ pub fn generate_line(
     overlay: &rel::RelocOverlay,
     symdb: &sym::SymbolDatabase,
     ent: &sym::RawSymEntry,
+    strings: &sym::StringsMap,
 ) -> Res<interop::Definition> {
     let addr = sym::SymAddr::Rel(
         overlay.backing().header().id.get(),
         ent.section_addr(),
     );
     let dat = Data::read(overlay, ent)?;
-    let code_line = dat.to_code(ent.sec_name, overlay, symdb)
+    let code_line = dat.to_code(ent.sec_name, overlay, symdb, strings)
         .map_err(|e| e.provide_sym(ent))?;
     let symbol_name = symdb.symbol_name(addr, false);
     Ok(code_line.gen(symbol_name, ent.local))

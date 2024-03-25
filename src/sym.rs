@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     collections::{BTreeSet, HashMap, HashSet},
     fmt::{self, Write as _},
     io,
@@ -394,15 +395,19 @@ impl<T> interop::Symbolic<T, SymAddr> for rel::Symbol<T> {
     }
 }
 
-impl interop::CDump<SymbolDatabase> for SymAddr {
-    type Error = fmt::Error;
+#[derive(Default)]
+pub struct StringsMap(HashMap<SymAddr, (String, Cell<bool>)>);
+impl StringsMap {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    fn dump(
-        &self,
-        f: &mut interop::Dumper,
-        ctx: &SymbolDatabase,
-    ) -> std::fmt::Result {
-        write!(f, "{}", ctx.symbol_name(*self, true))
+    pub fn insert(&mut self, addr: SymAddr, value: String) {
+        self.0.insert(addr, (value, Cell::new(false)));
+    }
+
+    pub fn visited(&self, addr: SymAddr) -> Option<bool> {
+        self.0.get(&addr).map(|f| f.1.get())
     }
 }
 
@@ -411,6 +416,7 @@ pub struct AddrDumpCtx<'a> {
     area: u32,
     symdb: &'a SymbolDatabase,
     pointee_tp: Option<String>,
+    strings: &'a StringsMap,
     is_refs: bool,
 }
 
@@ -419,6 +425,7 @@ impl<'a> AddrDumpCtx<'a> {
         area: u32,
         var_type: &'a interop::CType,
         symdb: &'a SymbolDatabase,
+        strings: &'a StringsMap,
     ) -> Self {
         let pointee_tp = var_type.get_pointee().map(|tp| {
             match &tp.kind {
@@ -434,6 +441,7 @@ impl<'a> AddrDumpCtx<'a> {
             area,
             symdb,
             pointee_tp,
+            strings,
             is_refs: true,
         }
     }
@@ -474,7 +482,12 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         ctx: &AddrDumpCtx<'a>,
     ) -> std::fmt::Result {
         let cast = ctx.pointee_tp().unwrap_or("");
-        write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, ctx.is_refs))
+        if let Some((value, accessed)) = ctx.strings.0.get(self) {
+            accessed.set(true);
+            write!(f, "{value:?}")
+        } else {
+            write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, ctx.is_refs))
+        }
     }
 }
 

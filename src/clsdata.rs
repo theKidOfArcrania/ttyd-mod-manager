@@ -42,13 +42,13 @@ impl<T: ?Sized> CRead<sym::SymAddr> for Ptr<T> {
     }
 }
 
-impl<T: ?Sized> CDump<sym::SymbolDatabase> for Ptr<T> {
+impl<T: ?Sized> CDump<sym::AddrDumpCtx<'_>> for Ptr<T> {
     type Error = fmt::Error;
 
     fn dump(
         &self,
         out: &mut interop::Dumper,
-        ctx: &sym::SymbolDatabase,
+        ctx: &sym::AddrDumpCtx,
     ) -> fmt::Result {
         self.addr.dump(out, ctx)
     }
@@ -99,13 +99,13 @@ impl<T: ?Sized> CRead<sym::SymAddr> for ConstPtr<T> {
     }
 }
 
-impl<T: ?Sized> CDump<sym::SymbolDatabase> for ConstPtr<T> {
+impl<T: ?Sized> CDump<sym::AddrDumpCtx<'_>> for ConstPtr<T> {
     type Error = fmt::Error;
 
     fn dump(
         &self,
         out: &mut interop::Dumper,
-        ctx: &sym::SymbolDatabase,
+        ctx: &sym::AddrDumpCtx,
     ) -> fmt::Result {
         self.addr.dump(out, ctx)
     }
@@ -124,7 +124,7 @@ impl<T: CTypeable + ?Sized> CTypeable for ConstPtr<T> {
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
 #[repr(u32)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 pub enum BattleUnitType {
 	KNullUnitKind, //0x0
 	KUnitGoomba, //0x1
@@ -364,7 +364,7 @@ pub enum BattleUnitType {
 
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 struct BattleDataEntry {
     tag: u32,
@@ -373,7 +373,7 @@ struct BattleDataEntry {
 
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 pub struct BattleUnitDefense {
     defenses: [u8; 5]
@@ -381,7 +381,7 @@ pub struct BattleUnitDefense {
 
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 pub struct BattleUnitDefenseAttr {
     defense_attrs: [u8; 5]
@@ -389,7 +389,7 @@ pub struct BattleUnitDefenseAttr {
 
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 pub struct BattleUnitKind {
     m_unit_type: BattleUnitType, //0x0
@@ -406,7 +406,7 @@ pub struct BattleUnitKind {
 
 #[derive(Debug, CTypeable, CRead, CDump, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 pub struct BeroEntry {
 	hit_name: ConstPtr<str>, //0x0
@@ -431,7 +431,7 @@ pub struct BeroEntry {
 #[derive(CTypeable, CRead, CDump, Debug, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
 #[repr(u32)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 pub enum NpcTerritoryType {
     NpcTerritoryTypeNothing = 0,
     NpcTerritoryTypeCircle = 1,
@@ -440,7 +440,7 @@ pub enum NpcTerritoryType {
 
 #[derive(Debug, CTypeable, CRead, CDump, Size, ConstSize)]
 #[cread(ptr = sym::SymAddr)]
-#[cdump(ctx = sym::SymbolDatabase, error = fmt::Error)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
 #[repr(C)]
 pub struct NpcSetupInfo {
     pub name: ConstPtr<str>,
@@ -544,13 +544,13 @@ macro_rules! mk_clsdata {
             }
         }
 
-        impl interop::CDump<sym::SymbolDatabase> for ClsData {
+        impl interop::CDump<sym::AddrDumpCtx<'_>> for ClsData {
             type Error = fmt::Error;
 
             fn dump(
                 &self,
                 out: &mut interop::Dumper,
-                ctx: &sym::SymbolDatabase,
+                ctx: &sym::AddrDumpCtx,
             ) -> Result<(), Self::Error> {
                 match self {
                     $(ClsData::$tp(dt) => dt.dump(out, ctx)),*,

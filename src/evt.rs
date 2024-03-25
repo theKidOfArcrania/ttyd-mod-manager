@@ -155,16 +155,11 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Expr {
         ctx: &sym::AddrDumpCtx,
     ) -> Result<(), Self::Error> {
         match self {
-            Expr::Address(addr) => write!(
-                out,
-                "{}",
-                ctx.symdb().symbol_name(sym::SymAddr::Dol(*addr), true),
-            ),
-            Expr::AddressSym(local) => write!(
-                out,
-                "{}",
-                ctx.symdb().symbol_name(sym::SymAddr::Rel(ctx.area(), *local), true),
-            ),
+            Expr::Address(addr) => sym::SymAddr::Dol(*addr).dump(out, ctx),
+            Expr::AddressSym(local) => sym::SymAddr::Rel(
+                ctx.area(),
+                *local,
+            ).dump(out, ctx),
             Expr::Float(fl) => write!(out, "FLOAT({fl:.5})"),
             Expr::UF(id) => write!(out, "UF({id})"),
             Expr::UW(id) => write!(out, "UW({id})"),
@@ -728,7 +723,11 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         Ok(())
     }
 
-    pub fn dump_scripts(&self, symdb: &sym::SymbolDatabase) {
+    pub fn dump_scripts(
+        &self,
+        symdb: &sym::SymbolDatabase,
+        strings: &sym::StringsMap,
+    ) {
         let evt_scripts = self.evt_scripts.borrow();
         for (addr, script) in evt_scripts.iter() {
             let area = self.overlay.backing().header().id.get();
@@ -745,6 +744,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                     area,
                     &interop::ctype!(mut [i32]),
                     symdb,
+                    strings,
                 ).to_string(script).expect("should format correctly")
             );
         }

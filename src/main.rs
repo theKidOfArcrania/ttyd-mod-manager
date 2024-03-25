@@ -375,7 +375,7 @@ fn main() -> Result<(), anyhow::Error> {
                     let parser = evt::EvtParser::new(&overlay);
                     parser.search_evt_scripts(&symdb)?;
                     parser.add_from_symdb(&symdb)?;
-                    parser.dump_scripts(&symdb);
+                    parser.dump_scripts(&symdb, &sym::StringsMap::new());
                 }
                 RelCommands::Source { symdb, outdir } => {
                     let outdir = PathBuf::from(outdir);
@@ -392,12 +392,52 @@ fn main() -> Result<(), anyhow::Error> {
                         sym::RawSymtab::from_reader(File::open(symdb)?)?,
                     );
 
+                    let mut strings = sym::StringsMap::new();
+                    for ent in symdb.rel_iter(area_id) {
+                        if ent.value_type == sym::DataType::Simple(
+                            sym::SimpleType::String) && ent.sec_name.is_ro()
+                        {
+                            strings.insert(
+                                sym::SymAddr::Rel(area_id, ent.section_addr()),
+                                match gen::Data::read(&overlay, ent)? {
+                                    gen::Data::String(val) => {
+                                        val.0
+                                    }
+                                    _ => panic!("should parse to string"),
+                                }
+                            );
+                        }
+                    }
+
                     let mut codes = HashMap::new();
                     let mut headers = BTreeSet::new();
-                    for s in symdb.rel_iter(area_id) {
+                    headers.insert("#include \"../include/evt.h\"\n".into());
+                    headers.insert("#include <stdlib.h>\n".into());
+                    let definitions = symdb.rel_iter(area_id)
+                        .map(|ent| {
+                            gen::generate_line(&overlay, &symdb, ent, &strings)
+                                .map(|def| (
+                                    def,
+                                    &ent.namespace,
+                                    sym::SymAddr::Rel(area_id, ent.section_addr())
+                                ))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    for (def, namespace, addr) in definitions {
+                        match strings.visited(addr) {
+                            None => {}
+                            Some(true) => continue,
+                            Some(false) => {
+                                eprintln!(
+                                    "WARNING: {}: string constant is not used",
+                                    symdb.symbol_name(addr, false),
+                                )
+                            }
+                        }
+
                         let mut file = format!("{}.c", area_name);
                         let mut file_include = format!("{}.h", area_name);
-                        for ns in s.namespace.split(" ") {
+                        for ns in namespace.split(" ") {
                             if ns.ends_with(".o") {
                                 file = format!("{}.c", &ns[..ns.len() - 2]);
                                 file_include =
@@ -405,7 +445,6 @@ fn main() -> Result<(), anyhow::Error> {
                                 break;
                             }
                         }
-                        let def = gen::generate_line(&overlay, &symdb, s)?;
 
                         let code = codes
                             .entry(file)
