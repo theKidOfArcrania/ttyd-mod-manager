@@ -22,6 +22,7 @@ error = { path = "./crates/error" }
 interop = { path = "./crates/interop", features = ["derive"] }
 ppcdis = { path = "./crates/ppcdis" }
 templated = { path = "./crates/templated" }
+convert_case = "0.6.0"
 
 [features]
 spm = []

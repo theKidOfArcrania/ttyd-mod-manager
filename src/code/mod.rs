@@ -143,6 +143,7 @@ pub struct CCode {
     pub return_type: String,
 }
 
+// TODO: vars with global values
 #[derive(Clone, Copy, Debug)]
 pub struct CCodeTemplateFragment<'a> {
     snippets: &'a [(&'a str, Option<usize>)],
@@ -269,8 +270,6 @@ fn match_fragment(
         if templ.name != &insn.name {
             return false;
         }
-
-        println!("{}", templ.name);
 
         if templ.operands.len() != insn.operands.len() {
             return false;
@@ -442,7 +441,6 @@ impl Code {
         let mut queue = VecDeque::new();
         queue.push_back((RegexState::new(&self.insns, base), templ.templ.into()));
         while let Some((st, regex)) = queue.pop_front() {
-            println!("HI: {} {regex:?}", st.insns.len());
             if st.done(&regex) {
                 return Some(CCode {
                     snippets: st.output,

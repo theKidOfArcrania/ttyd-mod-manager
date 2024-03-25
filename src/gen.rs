@@ -1,12 +1,9 @@
+use error::mk_err_wrapper;
+use std::fmt::Write as _;
 use thiserror::Error;
+use interop::CReader;
 
 use crate::{clsdata, code, evt, reader, rel, sym};
-
-use error::mk_err_wrapper;
-
-use std::fmt::Write as _;
-
-use interop::CReader;
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () =
@@ -232,7 +229,15 @@ pub enum Data {
 }
 
 impl Data {
-    fn read(
+    pub fn read(
+        overlay: &rel::RelocOverlay,
+        ent: &sym::RawSymEntry,
+    ) -> Res<Self> {
+        Data::read_no_provide(overlay, ent)
+            .map_err(|e| e.provide_sym(ent))
+    }
+
+    fn read_no_provide(
         overlay: &rel::RelocOverlay,
         ent: &sym::RawSymEntry,
     ) -> Res<Self> {
@@ -259,7 +264,6 @@ impl Data {
                         ent.section_addr(),
                     );
                     let asm: code::Code = reader.read_val_full()?;
-                    println!("!!!!!!! {}", ent.name);
                     match asm.find_default_sig(base_addr) {
                         None => Data::AsmFunc(asm),
                         Some(cfunc) => Data::CFunc(cfunc),
@@ -411,13 +415,13 @@ pub fn generate_line(
     symdb: &sym::SymbolDatabase,
     ent: &sym::RawSymEntry,
 ) -> Res<interop::Definition> {
-    let area_id = overlay.backing().header().id.get();
-    let addr = ent.section_addr();
-    let dat = Data::read(overlay, ent)
-        .map_err(|e| e.provide_sym(ent))?;
+    let addr = sym::SymAddr::Rel(
+        overlay.backing().header().id.get(),
+        ent.section_addr(),
+    );
+    let dat = Data::read(overlay, ent)?;
     let code_line = dat.to_code(ent.sec_name, overlay, symdb)
         .map_err(|e| e.provide_sym(ent))?;
-    let symbol_name =
-        symdb.symbol_name(sym::SymAddr::Rel(area_id, addr), false);
+    let symbol_name = symdb.symbol_name(addr, false);
     Ok(code_line.gen(symbol_name, ent.local))
 }

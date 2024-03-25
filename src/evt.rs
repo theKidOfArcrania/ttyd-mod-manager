@@ -5,6 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
+use convert_case::{Case, Casing};
 use interop::CReader;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
@@ -164,7 +165,7 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Expr {
                 "{}",
                 ctx.symdb().symbol_name(sym::SymAddr::Rel(ctx.area(), *local), true),
             ),
-            Expr::Float(fl) => write!(out, "{fl:.5}"),
+            Expr::Float(fl) => write!(out, "FLOAT({fl:.5})"),
             Expr::UF(id) => write!(out, "UF({id})"),
             Expr::UW(id) => write!(out, "UW({id})"),
             Expr::GSW(id) => write!(out, "GSW({id})"),
@@ -214,107 +215,107 @@ pub enum OpcodeIndent {
 #[repr(u8)]
 pub enum ScriptOpcode {
     InternalFetch = 0,
-    ScriptEnd,
+    EndScript,
     Return,
     Label,
     Goto,
-    LoopBegin,
-    LoopIterate,
-    LoopBreak,
-    LoopContinue,
+    Loop,
+    EndLoop,
+    BreakLoop,
+    ContinueLoop,
     WaitFrames,
     WaitMS,
     WaitUntil,
-    IfStringEqual,
-    IfStringNotEqual,
-    IfStringLess,
-    IfStringGreater,
-    IfStringLessEqual,
-    IfStringGreaterEqual,
-    IfFloatEqual,
-    IfFloatNotEqual,
-    IfFloatLess,
-    IfFloatGreater,
-    IfFloatLessEqual,
-    IfFloatGreaterEqual,
-    IfIntEqual,
-    IfIntNotEqual,
-    IfIntLess,
-    IfIntGreater,
-    IfIntLessEqual,
-    IfIntGreaterEqual,
+    IfStringEq,
+    IfStringNe,
+    IfStringLt,
+    IfStringGt,
+    IfStringLe,
+    IfStringGe,
+    IfFloatEq,
+    IfFloatNe,
+    IfFloatLt,
+    IfFloatGt,
+    IfFloatLe,
+    IfFloatGe,
+    IfIntEq,
+    IfIntNe,
+    IfIntLt,
+    IfIntGt,
+    IfIntLe,
+    IfIntGe,
     IfBitsSet,
     IfBitsClear,
     Else,
     EndIf,
-    SwitchExpr,
-    SwitchRaw,
-    CaseIntEqual,
-    CaseIntNotEqual,
-    CaseIntLess,
-    CaseIntGreater,
-    CaseIntLessEqual,
-    CaseIntGreaterEqual,
+    Switch,
+    SwitchR,
+    CaseIntEq,
+    CaseIntNe,
+    CaseIntLt,
+    CaseIntGt,
+    CaseIntLe,
+    CaseIntGe,
     CaseDefault,
-    CaseIntEqualAny,
-    CaseIntNotEqualAll,
-    CaseBitsSet,
-    EndMultiCase,
-    CaseIntRange,
-    SwitchBreak,
+    CaseOrEq,
+    CaseAndEq,
+    CaseFlag,
+    CaseEnd,
+    CaseBetween,
+    BreakSwitch,
     EndSwitch,
-    SetExprIntToExprInt,
-    SetExprIntToRaw,
-    SetExprFloatToExprFloat,
-    AddInt,
-    SubtractInt,
-    MultiplyInt,
-    DivideInt,
-    ModuloInt,
-    AddFloat,
-    SubtractFloat,
-    MultiplyFloat,
-    DivideFloat,
-    MemOpSetBaseInt,
-    MemOpReadInt,
-    MemOpReadInt2,
-    MemOpReadInt3,
-    MemOpReadInt4,
-    MemOpReadIntIndexed,
-    MemOpSetBaseFloat,
-    MemOpReadFloat,
-    MemOpReadFloat2,
-    MemOpReadFloat3,
-    MemOpReadFloat4,
-    MemOpReadFloatIndexed,
+    Set,
+    SetRaw,
+    SetFloat,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Addf,
+    Subf,
+    Mulf,
+    Divf,
+    MoSetBaseInt,
+    MoReadInt,
+    MoReadInt2,
+    MoReadInt3,
+    MoReadInt4,
+    MoReadIntIndexed,
+    MoSetBaseFloat,
+    MoReadFloat,
+    MoReadFloat2,
+    MoReadFloat3,
+    MoReadFloat4,
+    MoReadFloatIndexed,
     #[cfg(feature = "spm")]
     ClampInt,
-    SetUserWordBase,
-    SetUserFlagBase,
-    AllocateUserWordBase,
+    SetUwBase,
+    SetUfBase,
+    AllocateUwBase,
     AndExpr,
     AndRaw,
     OrExpr,
     OrRaw,
-    ConvertMSToFrames,
-    ConvertFramesToMS,
-    StoreIntToPtr,
-    StoreFloatToPtr,
-    LoadIntFromPtr,
-    LoadFloatFromPtr,
-    StoreIntToPtrExpr,
-    StoreFloatToPtrExpr,
-    LoadIntFromPtrExpr,
-    LoadFloatFromPtrExpr,
+    CvtMsF,
+    CvtFMs,
+    StoreInt,
+    StoreFloat,
+    LoadInt,
+    LoadFloat,
+    StoreIntInd,
+    StoreFloatInd,
+    LoadIntInd,
+    LoadFloatInd,
     CallCppSync,
     CallScriptAsync,
-    CallScriptAsyncSaveTID,
+    CallScriptAsyncTID,
     CallScriptSync,
     TerminateThread,
     Jump,
     SetThreadPriority,
     SetThreadTimeQuantum,
-    SetThreadTypeMask,
+    SetThreadMask,
     ThreadSuspendTypes,
     ThreadResumeTypes,
     ThreadSuspendTypesOther,
@@ -322,12 +323,12 @@ pub enum ScriptOpcode {
     ThreadSuspendTID,
     ThreadResumeTID,
     CheckThreadRunning,
-    ThreadStart,
-    ThreadStartSaveTID,
-    ThreadEnd,
-    ThreadChildStart,
-    ThreadChildStartSaveTID,
-    ThreadChildEnd,
+    BeginThread,
+    BeginThreadTid,
+    EndThread,
+    BeginChildThread,
+    BeginChildThreadTid,
+    EndChildThread,
     DebugOutputString,
     DebugUnk1,
     DebugExprToString,
@@ -337,8 +338,7 @@ pub enum ScriptOpcode {
 
 impl std::fmt::Display for ScriptOpcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Evt_")?;
-        std::fmt::Debug::fmt(self, f)
+        write!(f, "{}", format!("{self:?}").to_case(Case::ScreamingSnake))
     }
 }
 
@@ -361,35 +361,30 @@ impl ScriptOpcode {
         use ScriptOpcode::*;
         indent_match!(match (self) {
             {
-                SetExprIntToRaw, AndRaw, OrRaw,
+                SetRaw, AndRaw, OrRaw,
             }: OpcodeIndent::PassthroughRaw,
             { AndExpr, OrExpr }: OpcodeIndent::PassthroughHex,
             {
-                InternalFetch, ScriptEnd, Return, Label, Goto, LoopBreak,
-                LoopContinue, WaitFrames, WaitMS, WaitUntil,
+                InternalFetch, EndScript, Return, Label, Goto, BreakLoop,
+                ContinueLoop, WaitFrames, WaitMS, WaitUntil,
 
-                EndMultiCase, SwitchBreak,
+                CaseEnd, BreakSwitch,
 
-                SetExprIntToExprInt, SetExprFloatToExprFloat, AddInt,
-                SubtractInt, MultiplyInt, DivideInt, ModuloInt, AddFloat,
-                SubtractFloat, MultiplyFloat, DivideFloat,
+                Set, SetFloat, Add, Sub, Mul, Div, Mod, Addf, Subf, Mulf, Divf,
 
-                MemOpSetBaseInt, MemOpReadInt, MemOpReadInt2, MemOpReadInt3,
-                MemOpReadInt4, MemOpReadIntIndexed, MemOpSetBaseFloat,
-                MemOpReadFloat, MemOpReadFloat2, MemOpReadFloat3,
-                MemOpReadFloat4, MemOpReadFloatIndexed,
+                MoSetBaseInt, MoReadInt, MoReadInt2, MoReadInt3, MoReadInt4,
+                MoReadIntIndexed, MoSetBaseFloat, MoReadFloat, MoReadFloat2,
+                MoReadFloat3, MoReadFloat4, MoReadFloatIndexed,
 
-                SetUserWordBase, SetUserFlagBase, AllocateUserWordBase,
-                ConvertMSToFrames, ConvertFramesToMS, StoreIntToPtr,
-                StoreFloatToPtr, LoadIntFromPtr, LoadFloatFromPtr,
-                StoreIntToPtrExpr, StoreFloatToPtrExpr, LoadIntFromPtrExpr,
-                LoadFloatFromPtrExpr,
+                SetUwBase, SetUfBase, AllocateUwBase,
+                CvtMsF, CvtFMs, StoreInt, StoreFloat, LoadInt, LoadFloat,
+                StoreIntInd, StoreFloatInd, LoadIntInd, LoadFloatInd,
 
-                CallCppSync, CallScriptAsync, CallScriptAsyncSaveTID,
+                CallCppSync, CallScriptAsync, CallScriptAsyncTID,
                 CallScriptSync, Jump,
 
                 TerminateThread, SetThreadPriority, SetThreadTimeQuantum,
-                SetThreadTypeMask, ThreadSuspendTypes, ThreadResumeTypes,
+                SetThreadMask, ThreadSuspendTypes, ThreadResumeTypes,
                 ThreadSuspendTypesOther, ThreadResumeTypesOther,
                 ThreadSuspendTID, ThreadResumeTID, CheckThreadRunning,
 
@@ -397,32 +392,29 @@ impl ScriptOpcode {
                 DebugUnk2, DebugUnk3,
             }: OpcodeIndent::Passthrough,
             {
-                LoopBegin,
+                Loop,
 
-                IfStringEqual, IfStringNotEqual, IfStringLess, IfStringGreater,
-                IfStringLessEqual, IfStringGreaterEqual, IfFloatEqual,
-                IfFloatNotEqual, IfFloatLess, IfFloatGreater, IfFloatLessEqual,
-                IfFloatGreaterEqual, IfIntEqual, IfIntNotEqual, IfIntLess,
-                IfIntGreater, IfIntLessEqual, IfIntGreaterEqual, IfBitsSet,
-                IfBitsClear,
+                IfStringEq, IfStringNe, IfStringLt, IfStringGt, IfStringLe,
+                IfStringGe, IfFloatEq, IfFloatNe, IfFloatLt, IfFloatGt,
+                IfFloatLe, IfFloatGe, IfIntEq, IfIntNe, IfIntLt, IfIntGt,
+                IfIntLe, IfIntGe, IfBitsSet, IfBitsClear,
 
-                ThreadStart, ThreadStartSaveTID, ThreadChildStart,
-                ThreadChildStartSaveTID,
+                BeginThread, BeginThreadTid, BeginChildThread, BeginChildThreadTid,
             }: OpcodeIndent::IndentIn,
             {
-                LoopIterate, EndIf,
+                EndLoop, EndIf,
 
-                ThreadEnd, ThreadChildEnd,
+                EndThread, EndChildThread,
             }: OpcodeIndent::IndentOut,
             {
                 Else,
 
-                CaseIntEqual, CaseIntNotEqual, CaseIntLess, CaseIntGreater,
-                CaseIntLessEqual, CaseIntGreaterEqual, CaseDefault,
-                CaseIntEqualAny, CaseIntNotEqualAll, CaseBitsSet, CaseIntRange,
+                CaseIntEq, CaseIntNe, CaseIntLt, CaseIntGt, CaseIntLe,
+                CaseIntGe, CaseDefault, CaseOrEq, CaseAndEq,
+                CaseFlag, CaseBetween,
             }: OpcodeIndent::IndentOutIn,
 
-            { SwitchExpr, SwitchRaw }: OpcodeIndent::DblIndentIn,
+            { Switch, SwitchR }: OpcodeIndent::DblIndentIn,
             { EndSwitch }: OpcodeIndent::DblIndentOut,
         })
     }
@@ -441,7 +433,7 @@ impl ScriptOpcode {
                 Some([ExprOverride::Normal, ExprOverride::Hex].to_vec())
             }
             OpcodeIndent::DblIndentIn => {
-                if let Self::SwitchRaw = self {
+                if let Self::SwitchR = self {
                     // TODO: verify this is correct!
                     Some([ExprOverride::Raw].to_vec())
                 } else {
@@ -518,10 +510,6 @@ impl Instruction {
 
         Ok(Self { opc, args })
     }
-
-    fn size(&self) -> u32 {
-        (1 + self.args.len() as u32) * 4
-    }
 }
 
 #[derive(Debug)]
@@ -572,11 +560,9 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Script {
         ctx: &sym::AddrDumpCtx,
     ) -> Result<(), Self::Error> {
         let mut indent = 0;
-        let mut off = 0;
-        write!(out, "EVENT_SCRIPT(\n")?;
+        write!(out, "{{\n")?;
         for insn in self {
-            write!(out, "/* {off:05} */ ")?;
-
+            write!(out, "  ")?;
             let (ind_out, ind_in) = match insn.opc.indent() {
                 OpcodeIndent::Passthrough
                 | OpcodeIndent::PassthroughRaw
@@ -596,11 +582,10 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Script {
             insn.dump(out, ctx)?;
             indent += ind_in;
 
-            write!(out, ",\n")?;
-            off += insn.size();
+            write!(out, "\n")?;
         }
 
-        write!(out, ")")
+        write!(out, "}}")
     }
 }
 
@@ -615,7 +600,7 @@ impl interop::CRead<sym::SymAddr> for Script {
             let insn = Instruction::parse_one(reader)?;
             let opc = insn.opc;
             insns.push(insn);
-            if let ScriptOpcode::ScriptEnd = opc {
+            if let ScriptOpcode::EndScript = opc {
                 break;
             }
         }
@@ -727,7 +712,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
                 match insn.opc {
                     ScriptOpcode::CallScriptSync
                     | ScriptOpcode::CallScriptAsync
-                    | ScriptOpcode::CallScriptAsyncSaveTID => {
+                    | ScriptOpcode::CallScriptAsyncTID => {
                         match &insn.args[0] {
                             Expr::AddressSym(sym) => queue.push(*sym),
                             _ => {}
