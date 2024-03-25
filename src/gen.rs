@@ -6,7 +6,7 @@ use error::mk_err_wrapper;
 
 use std::fmt::Write as _;
 
-use interop::{CReader, CTypeable};
+use interop::CReader;
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () =
@@ -15,23 +15,41 @@ const _: () =
 const ERROR_JIS: &'static str = "Unable to encode string to/from shift_jis";
 #[derive(Debug, Error)]
 pub enum ErrorType {
-    #[error("{0}")]
-    ReaderError(reader::ErrorType),
-    #[error("{ERROR_JIS}")]
-    EncodingError,
-    #[error("Formatting error")]
-    FormattingError,
+    #[error("{0}: {1}")]
+    ReaderError(String, reader::ErrorType),
+    #[error("{0}: {ERROR_JIS}")]
+    EncodingError(String),
+    #[error("{0}: Formatting error")]
+    FormattingError(String),
 }
 
 mk_err_wrapper! {
-    ErrorType {
-        ReaderError => reader::ErrorType,
+    ErrorType
+}
+
+impl Error {
+    fn provide_sym(self, sym: &sym::RawSymEntry) -> Self {
+        let (bt, e) = self.unwrap();
+        let name = sym.name.clone();
+        let e = match e {
+            ErrorType::ReaderError(_, e) => ErrorType::ReaderError(name, e),
+            ErrorType::EncodingError(_) => ErrorType::EncodingError(name),
+            ErrorType::FormattingError(_) => ErrorType::FormattingError(name),
+        };
+        Self::new_with(bt, e)
+    }
+}
+
+impl From<reader::Error> for Error {
+    fn from(e: reader::Error) -> Self {
+        let (bt, e) = e.unwrap();
+        Self::new_with(bt, ErrorType::ReaderError("".into(), e))
     }
 }
 
 impl From<std::fmt::Error> for Error {
     fn from(_: std::fmt::Error) -> Self {
-        error!(FormattingError)
+        error!(FormattingError("".into()))
     }
 }
 
@@ -40,7 +58,7 @@ impl From<rel::Error> for Error {
         let (backtrace, tp) = value.unwrap();
         Error::new_with(
             backtrace,
-            ErrorType::ReaderError(reader::ErrorType::RelFileError(tp)),
+            ErrorType::ReaderError("".into(), reader::ErrorType::RelFileError(tp)),
         )
     }
 }
@@ -51,26 +69,60 @@ pub enum CodeLine {
         value: Option<String>,
     },
     AsmFunc(String),
+    Func {
+        args: Vec<String>,
+        body: String,
+        return_type: String,
+    },
 }
 
 impl CodeLine {
+    pub fn order(&self) -> u32 {
+        match self {
+            CodeLine::Variable { .. } => 0,
+            CodeLine::AsmFunc(_) => 1,
+            CodeLine::Func { .. } => 1,
+        }
+    }
     pub fn gen(&self, ident: String, local: bool) -> interop::Definition {
+        let order = self.order();
         match self {
             CodeLine::Variable { vartype, value } => {
                 vartype.make_decl(ident, value.clone(), local)
             }
             CodeLine::AsmFunc(code) => {
                 let decl = format!(
-                    "{}asm void {ident}()",
+                    "{}void {ident}(void)",
+                    if local {
+                        "static "
+                    } else {
+                        ""
+                    }
+                );
+                interop::Definition {
+                    definition: format!("asm {decl} {{\n{code}\n}}"),
+                    declare: Some(format!("{decl};")),
+                    order,
+                }
+            }
+            CodeLine::Func { args, body, return_type } => {
+                let decl = format!(
+                    "{}{return_type} {ident}({})",
                     if local {
                         "static "
                     } else {
                         ""
                     },
+                    if args.is_empty() {
+                        "void".into()
+                    } else {
+                        args.join(", ")
+                    },
                 );
                 interop::Definition {
-                    definition: format!("{decl} {{\n{code}\n}}"),
+                    definition: format!("{decl} {{\n{body}\n}}"),
                     declare: Some(format!("{decl};")),
+                    order,
                 }
             }
         }
@@ -84,7 +136,10 @@ impl<P: interop::Ptr> interop::CRead<P> for JPString {
     where
         R: CReader<P> + ?Sized,
     {
-        let vec: Vec<u8> = reader.read_val()?;
+        let mut vec: Vec<u8> = reader.read_val()?;
+        if vec.last() == Some(&0) {
+            vec.pop();
+        }
         let (s, _, errors) = encoding_rs::SHIFT_JIS.decode(&vec);
         if errors {
             Err(reader.error_custom(ERROR_JIS.into()))
@@ -104,7 +159,7 @@ impl<Ctx> interop::CDump<Ctx> for JPString {
     ) -> Result<(), Self::Error> {
         let (raw_bytes, _, errors) = encoding_rs::SHIFT_JIS.encode(&self.0);
         if errors {
-            bail!(EncodingError);
+            bail!(EncodingError("".into()));
         }
 
         write!(f, "\"")?;
@@ -164,7 +219,7 @@ impl interop::Size for Zeroed {
 #[derive(Debug)]
 pub enum Data {
     AsmFunc(code::Code),
-    CFunc(String),
+    CFunc(code::CCode),
     PtrArr(Vec<sym::SymAddr>),
     Ptr(sym::SymAddr),
     String(JPString),
@@ -173,11 +228,11 @@ pub enum Data {
     Zero(Zeroed),
     Evt(evt::Script),
     Vec3([f32; 3]),
-    NpcSetupInfo(Vec<clsdata::NpcSetupInfo>),
+    Struct(clsdata::ClsData),
 }
 
 impl Data {
-    pub fn read(
+    fn read(
         overlay: &rel::RelocOverlay,
         ent: &sym::RawSymEntry,
     ) -> Res<Self> {
@@ -198,20 +253,26 @@ impl Data {
                 sym::SimpleType::Zero
                 | sym::SimpleType::Unknown => Data::Zero(reader.read_val_full()?),
                 sym::SimpleType::Evt => Data::Evt(reader.read_val_full()?),
-                sym::SimpleType::Function => Data::AsmFunc(reader.read_val_full()?),
+                sym::SimpleType::Function => {
+                    let base_addr = sym::SymAddr::Rel(
+                        overlay.backing().header().id.get(),
+                        ent.section_addr(),
+                    );
+                    let asm: code::Code = reader.read_val_full()?;
+                    println!("!!!!!!! {}", ent.name);
+                    match asm.find_default_sig(base_addr) {
+                        None => Data::AsmFunc(asm),
+                        Some(cfunc) => Data::CFunc(cfunc),
+                    }
+                },
                 sym::SimpleType::Vec3 => Data::Vec3(reader.read_val_full()?),
             },
-            sym::DataType::Class(tp) => match tp {
-                sym::ClassType::NpcSetupInfo => {
-                    Data::NpcSetupInfo(reader.read_val_full()?)
-                }
-                _ => todo!(),
-            },
+            sym::DataType::Class(tp) => Data::Struct(tp.read(&mut reader)?),
         };
         Ok(res)
     }
 
-    pub fn get_type(
+    fn get_type(
         &self,
         sec_type: sym::SectionType,
         overlay: &rel::RelocOverlay,
@@ -275,13 +336,13 @@ impl Data {
             Data::Zero(_) => interop::ctype_kind!([i8]),
             Data::Evt(_) => interop::ctype_kind!([i32]),
             Data::Vec3(_) => interop::ctype_kind!([f32; 3]),
-            Data::NpcSetupInfo(_) => clsdata::NpcSetupInfo::get_type(),
+            Data::Struct(s) => s.get_type(),
         };
 
         interop::CType::new(sec_type.is_ro(), kind)
     }
 
-    pub fn to_code(
+    fn to_code(
         &self,
         sec_type: sym::SectionType,
         overlay: &rel::RelocOverlay,
@@ -300,7 +361,13 @@ impl Data {
                 Data::AsmFunc(code) => {
                     return Ok(CodeLine::AsmFunc(interop::dumps(code, &addr_ctx)?));
                 },
-                Data::CFunc(_) => todo!(),
+                Data::CFunc(code) => {
+                    return Ok(CodeLine::Func {
+                        args: code.args.clone(),
+                        body: interop::dumps(code, &addr_ctx)?,
+                        return_type: code.return_type.clone(),
+                    })
+                },
                 Data::PtrArr(addrs) => interop::dumps(addrs, &addr_ctx)?,
                 Data::Ptr(addr) => interop::dumps(addr, &addr_ctx)?,
                 Data::String(dt) => interop::dumps(dt, &())?,
@@ -312,7 +379,7 @@ impl Data {
                 Data::Zero(dt) => interop::dumps(dt, &())?,
                 Data::Evt(dt) => interop::dumps(dt, &addr_ctx)?,
                 Data::Vec3(dt) => interop::dumps(dt, &())?,
-                Data::NpcSetupInfo(dt) => interop::dumps(dt, &symdb)?,
+                Data::Struct(dt) =>  interop::dumps(dt, &symdb)?,
             })
         };
 
@@ -333,7 +400,7 @@ impl interop::Size for Data {
             Data::Zero(dat) => dat,
             Data::Evt(dat) => dat,
             Data::Vec3(dat) => dat,
-            Data::NpcSetupInfo(dat) => dat,
+            Data::Struct(dat) => dat,
         }
         .len()
     }
@@ -346,8 +413,10 @@ pub fn generate_line(
 ) -> Res<interop::Definition> {
     let area_id = overlay.backing().header().id.get();
     let addr = ent.section_addr();
-    let dat = Data::read(overlay, ent)?;
-    let code_line = dat.to_code(ent.sec_name, overlay, symdb)?;
+    let dat = Data::read(overlay, ent)
+        .map_err(|e| e.provide_sym(ent))?;
+    let code_line = dat.to_code(ent.sec_name, overlay, symdb)
+        .map_err(|e| e.provide_sym(ent))?;
     let symbol_name =
         symdb.symbol_name(sym::SymAddr::Rel(area_id, addr), false);
     Ok(code_line.gen(symbol_name, ent.local))

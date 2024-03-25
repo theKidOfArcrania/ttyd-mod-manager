@@ -29,6 +29,7 @@ impl<T: StdError + 'static> std::error::Error for Error<T> {
     }
 
     fn cause(&self) -> Option<&dyn StdError> {
+        #[allow(deprecated)]
         self.0.cause()
     }
 

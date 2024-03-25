@@ -7,6 +7,6 @@
 mod insn;
 mod rel;
 
-pub use insn::{Instruction, RawInsn, Error, ErrorType};
+pub use insn::{Instruction, RawInsn, Error, ErrorType, Operand, Num, Number, RelValue, ImmOpType};
 pub use rel::{RelocAction, RelocType};
 

@@ -2,12 +2,12 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fmt::{self, Write as _},
     io,
-    mem::size_of,
+    mem::size_of, ops::{Add, AddAssign},
 };
 
 use serde::{de::IntoDeserializer, Deserialize, Serialize};
 
-use crate::rel;
+use crate::{clsdata, rel};
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -69,40 +69,10 @@ pub enum SimpleType {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ClassType {
-    AudienceItemWeight,
-    BattleGroupSetup,
-    BattleSetupData,
-    BattleSetupNoTable,
-    BattleSetupWeightedLoadout,
-    BattleStageFallObjectData,
-    BattleStageNozzleData,
-    BattleStageObjectData,
-    BattleStageData,
-    BattleUnitKind,
-    BattleUnitKindPart,
-    BattleUnitDataTable,
-    BattleUnitDefense,
-    BattleUnitDefenseAttr,
-    BattleUnitPoseTable,
-    BattleUnitSetup,
-    BattleWeapon,
-    CookingRecipe,
-    ItemData,
-    ItemDropData,
-    NpcAiTypeTable,
-    NpcSetupInfo,
-    PointDropData,
-    ShopItemTable,
-    ShopSellPriceList,
-    StatusVulnerability,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DataType {
     Simple(SimpleType),
-    Class(ClassType),
+    Class(clsdata::ClsDataType),
 }
 
 impl serde::Serialize for DataType {
@@ -144,7 +114,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                         if c.is_lowercase() {
                             DataType::Simple(SimpleType::deserialize(de)?)
                         } else {
-                            DataType::Class(ClassType::deserialize(de)?)
+                            DataType::Class(clsdata::ClsDataType::deserialize(de)?)
                         }
                     }
                 })
@@ -356,6 +326,12 @@ impl RawSymtab {
             if special_rel.contains(&ent.name) {
                 ent.local = false;
             }
+
+            // *_init_evt types need to be global since the area will need to
+            // set the initial event for each map
+            if ent.name.ends_with("_init_evt") {
+                ent.local = false;
+            }
             syms.push(ent);
         }
 
@@ -367,6 +343,23 @@ impl RawSymtab {
 pub enum SymAddr {
     Dol(u32),
     Rel(u32, rel::SectionAddr),
+}
+
+impl Add<u32> for SymAddr {
+    type Output = SymAddr;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        match self {
+            Self::Dol(off) => Self::Dol(off + rhs),
+            Self::Rel(file, saddr) => Self::Rel(file, saddr + rhs),
+        }
+    }
+}
+
+impl AddAssign<u32> for SymAddr {
+    fn add_assign(&mut self, rhs: u32) {
+        *self = *self + rhs;
+    }
 }
 
 impl From<u32> for SymAddr {

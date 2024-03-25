@@ -1,10 +1,11 @@
+#![feature(iter_intersperse)]
 #![feature(byte_slice_trim_ascii)]
 #![feature(lazy_cell)]
 #![feature(generic_const_exprs)]
 #![feature(error_generic_member_access)]
 #![allow(incomplete_features)]
 use std::{
-    collections::{BTreeSet, HashMap}, fs::{self, File}, io::Write, path::{Path, PathBuf}
+    collections::{BTreeMap, BTreeSet, HashMap}, fs::{self, File}, io::Write, path::{Path, PathBuf}
 };
 
 use anyhow::bail;
@@ -406,8 +407,11 @@ fn main() -> Result<(), anyhow::Error> {
                         }
                         let def = gen::generate_line(&overlay, &symdb, s)?;
 
-                        let code =
-                            codes.entry(file).or_insert_with(String::new);
+                        let code = codes
+                            .entry(file)
+                            .or_insert_with(BTreeMap::new)
+                            .entry(def.order)
+                            .or_insert_with(String::new);
                         code.push_str(&def.definition);
                         code.push_str("\n");
 
@@ -417,6 +421,8 @@ fn main() -> Result<(), anyhow::Error> {
                             ));
                             let code = codes
                                 .entry(file_include)
+                                .or_insert_with(BTreeMap::new)
+                                .entry(def.order)
                                 .or_insert_with(String::new);
                             code.push_str(decl);
                             code.push_str("\n");
@@ -424,6 +430,7 @@ fn main() -> Result<(), anyhow::Error> {
                     }
 
                     for (file, code) in codes.into_iter() {
+                        let code: String = code.into_values().intersperse("\n".into()).collect();
                         let is_source = file.ends_with(".c");
                         let mut file = File::create(outdir.join(file))?;
                         if is_source {

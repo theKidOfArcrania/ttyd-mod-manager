@@ -125,6 +125,7 @@ impl<const SIZE: usize, T: CTypeable> CTypeable for [&T; SIZE] {
 pub struct Definition {
     pub declare: Option<String>,
     pub definition: String,
+    pub order: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -424,6 +425,7 @@ impl CType {
             ))
         };
         Definition {
+            order: 0,
             declare,
             definition,
         }
