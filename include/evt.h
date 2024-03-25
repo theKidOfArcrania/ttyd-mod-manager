@@ -257,7 +257,7 @@ enum EvtOpcode
 #define LOAD_INT_IND(expr1, expr2)      EVT_CMD(EVT_OPC_GETR, expr1, expr2),
 #define LOAD_FLOAT_IND(expr1, expr2)    EVT_CMD(EVT_OPC_GETRF, expr1, expr2),
 
-#define CALL_CPP_SYNC(FUNC, ARGS...)    EVT_CMD(EVT_OPC_USER_FUNC, (Bytecode) FUNC, ##ARGS),
+#define CALL_CPP_SYNC(FUNC, ARGS...)         EVT_CMD(EVT_OPC_USER_FUNC, (Bytecode) FUNC, ##ARGS),
 #define CALL_SCRIPT_ASYNC(script)            EVT_CMD(EVT_OPC_RUN_EVT, script),
 #define CALL_SCRIPT_ASYNC_TID(script, expr)  EVT_CMD(EVT_OPC_RUN_EVT_ID, script, expr),
 #define CALL_SCRIPT_SYNC(script)             EVT_CMD(EVT_OPC_RUN_CHILD_EVT, script),

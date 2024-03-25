@@ -124,7 +124,7 @@ where
     if max_size > WRAP_LIST_LEN {
         write!(f, "\n}}")?
     } else {
-        write!(f, "}}")?
+        write!(f, " }}")?
     }
 
     Ok(())
