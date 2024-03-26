@@ -157,3 +157,175 @@ pub(super) static MAPDRAW_TEMPL: CCodeTemplate<'static> = {
         return_type: "int",
     }
 };
+
+pub(super) static DRAW_TEMPL: CCodeTemplate<'static> = {
+    #[allow(non_upper_case_globals)]
+    const GXGetViewportv: usize = 0;
+    #[allow(non_upper_case_globals)]
+    const GXSetViewport: usize = 1;
+    #[allow(non_upper_case_globals)]
+    const GXGetProjectionv: usize = 2;
+    #[allow(non_upper_case_globals)]
+    const GXSetProjection: usize = 3;
+    #[allow(non_upper_case_globals)]
+    const GXSetProjectionv: usize = 4;
+    #[allow(non_upper_case_globals)]
+    const camGetPtr: usize = 5;
+    #[allow(non_upper_case_globals)]
+    const camGetCurPtr: usize = 6;
+    #[allow(non_upper_case_globals)]
+    const winTexSet: usize = 7;
+    #[allow(non_upper_case_globals)]
+    const winTexInit: usize = 8;
+    #[allow(non_upper_case_globals)]
+    const wp: usize = 9;
+    #[allow(non_upper_case_globals)]
+    const dat_aaa_000005e8: usize = 10;
+    #[allow(non_upper_case_globals)]
+    const vec3_aaa_000005d0: usize = 11;
+    #[allow(non_upper_case_globals)]
+    const vec3_aaa_000005dc: usize = 12;
+
+    CCodeTemplate {
+        name: "draw",
+        templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
+            constants: &[dat_aaa_000005e8],
+            snippets: &templated!(
+                concat!(
+                    "    f32 old_viewport[GX_VIEWPORT_SZ];\n",
+                    "    f32 old_projection[GX_PROJECTION_SZ];\n",
+                    "    CameraEntry old_camera;\n",
+                    "    Vec translate, scale;\n",
+                    "    GXColor color;\n",
+                    "\n",
+                    "    // Preserve old projection/views\n",
+                    "    {GXGetViewportv}(old_viewport);\n",
+                    "    {GXGetProjectionv}(old_projection);\n",
+                    "\n",
+                    "    // Draw 2d texture onto screen\n",
+                    "    {GXSetProjection}({camGetPtr}(CAMERA_2D)->projection, {camGetPtr}(CAMERA_2D)->type);\n",
+                    "    old_camera = *{camGetCurPtr}();\n",
+                    "    *{camGetCurPtr}() = *{camGetPtr}(CAMERA_2D);\n",
+                    "    {winTexInit}(*wp->texture->data);\n",
+                    "    color = (GXColor){{0xFF, 0xFF, 0xFF, (u8)wp->alpha}};\n",
+                    "    scale = {vec3_aaa_000005dc};\n", // TODO: if we inline constants here,
+                                                          // weird stuff happens...
+                    "    translate = {vec3_aaa_000005d0};\n",
+                    "    {winTexSet}(3, translate, scale, color); // render the map image\n",
+                    "\n",
+                    "    // Restore old settings\n",
+                    "    *{camGetCurPtr}() = old_camera;\n",
+                    "    {GXSetViewport}(old_viewport[0], old_viewport[1], old_viewport[2],\n",
+                    "         old_viewport[3], old_viewport[4], old_viewport[5]);\n",
+                    "    {GXSetProjectionv}(old_projection);",
+                )
+            ),
+            asm: &insns!(
+                stwu r1, [s -720, r1];
+                mfspr r0, 8;
+                stw r0, [s 724, r1];
+                addi r3, r1, 68;
+                stw r31, [s 716, r1];
+                bl [GXGetViewportv@@rel];
+                addi r3, r1, 40;
+                bl [GXGetProjectionv@@rel];
+                addi r3, r0, 8;
+                bl [camGetPtr@@rel];
+                or r31, r3, r3;
+                addi r3, r0, 8;
+                bl [camGetPtr@@rel];
+                lwz r4, [s 412, r31];
+                addi r3, r3, 348;
+                bl [GXSetProjection@@rel];
+                bl [camGetCurPtr@@rel];
+                addi r0, r0, 76;
+                addi r5, r1, 92;
+                addi r4, r3, [s -4];
+                mtspr 9, r0;
+                lwz r3, [s 4, r4];
+                lwzu r0, [s 8, r4];
+                stw r3, [s 4, r5];
+                stwu r0, [s 8, r5];
+                bc 16, 0, [s -16];
+                addi r3, r0, 8;
+                bl [camGetPtr@@rel];
+                or r31, r3, r3;
+                bl [camGetCurPtr@@rel];
+                addi r0, r0, 76;
+                addi r5, r3, [s -4];
+                addi r4, r31, [s -4];
+                mtspr 9, r0;
+                lwz r3, [s 4, r4];
+                lwzu r0, [s 8, r4];
+                stw r3, [s 4, r5];
+                stwu r0, [s 8, r5];
+                bc 16, 0, [s -16];
+                addis r3, r0, [wp@ha];
+                addi r3, r3, [wp@lo];
+                lwz r3, [s 0, r3];
+                lwz r3, [s 0, r3];
+                lwz r3, [s 160, r3];
+                lwz r3, [s 0, r3];
+                bl [winTexInit@@rel];
+                addis r3, r0, [dat_aaa_000005e8@ha];
+                addis r4, r0, [wp@ha];
+                addi r5, r3, [dat_aaa_000005e8@lo];
+                addi r6, r1, 12;
+                lwz r0, [s 0, r5];
+                addi r4, r4, [wp@lo];
+                lwz r4, [s 0, r4];
+                addis r3, r0, [vec3_aaa_000005dc@ha];
+                stw r0, [s 8, r1];
+                addi r7, r3, [vec3_aaa_000005dc@lo];
+                lwz r0, [s 4, r4];
+                addis r3, r0, [vec3_aaa_000005d0@ha];
+                addi r9, r3, [vec3_aaa_000005d0@lo];
+                lwz r12, [s 0, r7];
+                stb r0, [s 11, r1];
+                addi r4, r1, 28;
+                lwz r11, [s 4, r7];
+                addi r5, r1, 16;
+                lwz r10, [s 8, r7];
+                addi r3, r0, 3;
+                lwz r31, [s 8, r1];
+                lwz r8, [s 0, r9];
+                lwz r7, [s 4, r9];
+                lwz r0, [s 8, r9];
+                stw r31, [s 12, r1];
+                stw r12, [s 16, r1];
+                stw r11, [s 20, r1];
+                stw r10, [s 24, r1];
+                stw r8, [s 28, r1];
+                stw r7, [s 32, r1];
+                stw r0, [s 36, r1];
+                bl [winTexSet@@rel];
+                bl [camGetCurPtr@@rel];
+                addi r0, r0, 76;
+                addi r5, r3, [s -4];
+                addi r4, r1, 92;
+                mtspr 9, r0;
+                lwz r3, [s 4, r4];
+                lwzu r0, [s 8, r4];
+                stw r3, [s 4, r5];
+                stwu r0, [s 8, r5];
+                bc 16, 0, [s -16];
+                lfs r1, [s 68, r1];
+                lfs r2, [s 72, r1];
+                lfs r3, [s 76, r1];
+                lfs r4, [s 80, r1];
+                lfs r5, [s 84, r1];
+                lfs r6, [s 88, r1];
+                bl [GXSetViewport@@rel];
+                addi r3, r1, 40;
+                bl [GXSetProjectionv@@rel];
+                lwz r0, [s 724, r1];
+                lwz r31, [s 716, r1];
+                mtspr 8, r0;
+                addi r1, r1, 720;
+                bclr 20, 0;
+            ),
+        }),
+        args: &["CameraId cameraId", "void* param"],
+        return_type: "void",
+    }
+};

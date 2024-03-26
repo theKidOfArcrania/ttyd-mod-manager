@@ -214,6 +214,7 @@ static DEFAULT_SIGS: &[&'static CCodeTemplate<'static>] = &[
     &STUB_TEMPL,
     &aaa::MAPDELETE_TEMPL,
     &aaa::MAPDRAW_TEMPL,
+    &aaa::DRAW_TEMPL,
 ];
 
 impl Code {
