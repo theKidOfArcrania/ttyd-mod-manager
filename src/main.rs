@@ -167,7 +167,7 @@ fn copy_dir_all(
                         e.context(entry.path().to_string_lossy().to_string())
                     };
 
-                    return match &hdr.handler {
+                    match &hdr.handler {
                         HandlerType::ByByte(hdr) => {
                             let base = match base_path {
                                 None => None,
@@ -195,7 +195,8 @@ fn copy_dir_all(
                         HandlerType::ByFile(hdr) => {
                             hdr(base_path, &entry.path(), &output_path)
                         }
-                    };
+                    }?;
+                    break;
                 }
             }
 
