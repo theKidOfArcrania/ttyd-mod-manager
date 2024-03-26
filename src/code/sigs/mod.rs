@@ -1,5 +1,7 @@
 use super::*;
 
+mod aaa;
+
 #[allow(unused)]
 mod operand_consts {
     macro_rules! mk_const {
@@ -30,6 +32,12 @@ mod operand_consts {
 
 macro_rules! operands {
     ($name:ident) => { operand_consts::$name::OPERAND };
+    ([$sym:ident @ $symopt:ident, $reg:ident]) => {
+        ppcdis::Operand::Mem(
+            operands!(symopt $symopt)($sym),
+            operand_consts::$reg::RAW,
+        )
+    };
     ([$mode:ident $num:expr, $reg:ident]) => {
         ppcdis::Operand::Mem(
             ppcdis::RelValue::Value(
@@ -70,6 +78,8 @@ macro_rules! insns {
     }
 }
 
+pub(crate) use {insns, operands};
+
 static PROLOG_TEMPL: CCodeTemplate<'static> = {
     #[allow(non_upper_case_globals)]
     const ctors: usize = 0;
@@ -83,6 +93,7 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
         name: "prolog",
         templ: TemplateRegExp::Concat(&[
             TemplateRegExp::Fragment(CCodeTemplateFragment {
+                constants: &[],
                 snippets: &templated!(
                     concat!(
                         "    void (*ctor)();\n",
@@ -109,6 +120,7 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
                 ),
             }),
             TemplateRegExp::Rep(&TemplateRegExp::Fragment(CCodeTemplateFragment {
+                constants: &[],
                 snippets: &templated!(
                     concat!(
                         "\n    {rel_set_evt_addr}({area_str}, {evt});",
@@ -123,6 +135,7 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
                 ),
             })),
             TemplateRegExp::Fragment(CCodeTemplateFragment {
+                constants: &[],
                 snippets: &[],
                 asm: &insns!(
                     lwz r0, [s 20, r1];
@@ -146,6 +159,7 @@ static EPILOG_TEMPL: CCodeTemplate<'static> = {
     CCodeTemplate {
         name: "epilog",
         templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
+            constants: &[],
             snippets: &templated!(
                 concat!(
                     "    void (*dtor)();\n",
@@ -186,6 +200,7 @@ static EPILOG_TEMPL: CCodeTemplate<'static> = {
 static STUB_TEMPL: CCodeTemplate<'static> = CCodeTemplate {
     name: "stub",
     templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
+        constants: &[],
         snippets: &templated!("    // stub function"),
         asm: &insns!(bclr 20, 0;),
     }),
@@ -193,50 +208,12 @@ static STUB_TEMPL: CCodeTemplate<'static> = CCodeTemplate {
     return_type: "void",
 };
 
-static MAP_DELETE_TEMPL: CCodeTemplate<'static> = {
-    #[allow(non_upper_case_globals)]
-    const wp: usize = 0;
-    #[allow(non_upper_case_globals)]
-    const fileFree: usize = 1;
-    CCodeTemplate {
-        name: "mapdelete",
-        templ: TemplateRegExp::Fragment(CCodeTemplateFragment {
-            snippets: &templated!(
-                concat!(
-                    "    if ({wp} != NULL && {wp}->texture != NULL) {{\n",
-                    "        {fileFree}({wp}->texture);\n",
-                    "    }}",
-                )
-            ),
-            asm: &insns!(
-                stwu r1, [s -16, r1];
-                mfspr r0, 8;
-                addis r3, r0, [wp@ha];
-                stw r0, [s 20, r1];
-                addi r3, r3, [wp@lo];
-                lwz r3, [s 0, r3];
-                cmplwi 0, r3, 0;
-                bc 12, 2, 20;
-                lwz r3, [s 0, r3];
-                cmplwi 0, r3, 0;
-                bc 12, 2, 8;
-                bl [fileFree@@rel];
-                lwz r0, [s 20, r1];
-                mtspr 8, r0;
-                addi r1, r1, 16;
-                bclr 20, 0;
-            ),
-        }),
-        args: &[],
-        return_type: "void",
-    }
-};
-
 static DEFAULT_SIGS: &[&'static CCodeTemplate<'static>] = &[
     &PROLOG_TEMPL,
     &EPILOG_TEMPL,
     &STUB_TEMPL,
-    &MAP_DELETE_TEMPL,
+    &aaa::MAPDELETE_TEMPL,
+    &aaa::MAPDRAW_TEMPL,
 ];
 
 impl Code {

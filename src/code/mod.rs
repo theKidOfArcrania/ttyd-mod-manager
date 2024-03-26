@@ -149,6 +149,7 @@ pub struct CCode {
 // TODO: vars with global values
 #[derive(Clone, Copy, Debug)]
 pub struct CCodeTemplateFragment<'a> {
+    constants: &'a [usize],
     snippets: &'a [(&'a str, Option<usize>)],
     asm: &'a [InsnTempl<'a>],
 }
@@ -175,7 +176,7 @@ pub struct InsnTempl<'a> {
     pub operands: &'a [ppcdis::Operand<usize>],
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymTag {
     Reg, Lo, Hi, Ha
 }
@@ -189,7 +190,7 @@ pub enum SimpleOperand<S> {
 }
 
 impl<S> SimpleOperand<S> {
-    fn unify<T, F: FnMut(&S, Result<u32, &T>) -> bool>(
+    fn unify<T, F: FnMut(bool, SymTag, &S, Result<u32, &T>) -> bool>(
         self,
         other: SimpleOperand<T>,
         unifier: &mut F,
@@ -202,14 +203,17 @@ impl<S> SimpleOperand<S> {
                 }
                 p1.into_iter().zip(p2).all(|(a, b)| a.unify(b, unifier))
             },
+            (SimpleOperand::Symbol(t1, s1), SimpleOperand::Number(n2)) => {
+                unifier(false, t1, &s1, Ok(n2))
+            }
             (SimpleOperand::Symbol(t1, s1), SimpleOperand::Symbol(t2, s2)) => {
-                t1 == t2 && unifier(&s1, Err(&s2))
+                t1 == t2 && unifier(false, t1, &s1, Err(&s2))
             }
             (SimpleOperand::RelSymbol(s1), SimpleOperand::Number(n2)) => {
-                unifier(&s1, Ok(n2))
+                unifier(true, SymTag::Reg, &s1, Ok(n2))
             }
             (SimpleOperand::RelSymbol(s1), SimpleOperand::RelSymbol(s2)) => {
-                unifier(&s1, Err(&s2))
+                unifier(true, SymTag::Reg, &s1, Err(&s2))
             }
             _ => false,
         }
@@ -283,7 +287,7 @@ fn insn_edit_distance(
     for (op_templ, op) in template.operands.iter().zip(target.operands.iter()) {
         let templ_simp = SimpleOperand::from(op_templ.clone());
         let actual_simp = SimpleOperand::from(op.clone());
-        let unified = templ_simp.unify(actual_simp, &mut |_symid, _actual| {
+        let unified = templ_simp.unify(actual_simp, &mut |_, _, _symid, _actual| {
             // NOTE: fuzzy match does not care about symbol mapping. This may
             // give an artificially high match
             true
@@ -352,6 +356,73 @@ fn match_fuzzy_fragment(
     }
 }
 
+#[derive(Default, Debug)]
+struct PartialAddress {
+    lo: Option<u32>,
+    hi: Option<u32>,
+    ha: Option<u32>,
+}
+
+impl PartialAddress {
+    pub fn is_empty(&self) -> bool {
+        self.lo.is_none() && self.hi.is_none() && self.ha.is_none()
+    }
+    pub fn add_part(&mut self, tag: SymTag, value: u32) -> bool {
+        let mut lo = self.lo;
+        let mut hi = self.hi;
+        let mut ha = self.ha;
+        match tag {
+            SymTag::Reg => {
+                lo = Some(value & 0xffff);
+                hi = Some(value >> 16);
+                ha = Some((value + 0x8000) >> 16);
+            },
+            SymTag::Lo => {
+                let value = value & 0xffff;
+                lo = Some(value);
+                if let Some(hi) = hi {
+                    ha = Some(hi + (((value + 0x8000) & 0xffff) >> 16))
+                } else if let Some(ha) = ha {
+                    hi = Some(ha - (((value + 0x8000) & 0xffff) >> 16))
+                }
+            }
+            SymTag::Hi => {
+                let value = value & 0xffff;
+                hi = Some(value);
+                if let Some(lo) = lo {
+                    ha = Some((value & 0xffff) + ((lo + 0x8000) >> 16))
+                } else if let Some(ha) = ha {
+                    if ha.wrapping_sub(value) > 1 {
+                        return false;
+                    }
+                }
+            },
+            SymTag::Ha => {
+                let value = value & 0xffff;
+                ha = Some(value);
+                if let Some(lo) = lo {
+                    hi = Some(value - ((lo + 0x8000) >> 16));
+                } else if let Some(ha) = ha {
+                    if ha.wrapping_sub(value) > 1 {
+                        return false;
+                    }
+                }
+            },
+        }
+
+        if (self.lo.is_some() && lo != self.lo) ||
+            (self.hi.is_some() && hi != self.hi) ||
+            (self.ha.is_some() && ha != self.ha) {
+                return false;
+        }
+
+        self.lo = lo;
+        self.hi = hi;
+        self.ha = ha;
+        true
+    }
+}
+
 fn match_fragment(
     insns: &[ppcdis::Instruction<sym::SymAddr>],
     templ: CCodeTemplateFragment,
@@ -362,7 +433,8 @@ fn match_fragment(
         return false;
     }
 
-    let mut symmap = HashMap::new();
+    let mut symmap = HashMap::<usize, sym::SymAddr>::new();
+    let mut partial = HashMap::new();
     for (i, (templ, insn)) in templ.asm.iter().zip(insns.iter()).enumerate() {
         if templ.name != &insn.name {
             return false;
@@ -375,11 +447,27 @@ fn match_fragment(
         for (op_templ, op) in templ.operands.iter().zip(insn.operands.iter()) {
             let templ_simp = SimpleOperand::from(op_templ.clone());
             let actual_simp = SimpleOperand::from(op.clone());
-            let unified = templ_simp.unify(actual_simp, &mut |symid, actual| {
+            let unified = templ_simp.unify(actual_simp, &mut |rel, tag, symid, actual| {
+                let pval = partial.entry(*symid)
+                    .or_insert(PartialAddress::default());
                 let addr = match actual {
-                    Ok(off) => base + (i as u32 * 4 + off),
+                    Ok(off) => {
+                        if rel {
+                            base + (i as u32 * 4 + off)
+                        } else {
+                            return pval.add_part(tag, off);
+                        }
+                    }
                     Err(addr) => *addr,
                 };
+                let partials_consistent = match addr {
+                    sym::SymAddr::Dol(val) => pval.add_part(SymTag::Reg, val),
+                    sym::SymAddr::Rel(_, _) => pval.is_empty(),
+                };
+
+                if !partials_consistent {
+                    return false;
+                }
 
                 if let Some(old_addr) = symmap.insert(*symid, addr) {
                     if old_addr != addr {
@@ -394,6 +482,16 @@ fn match_fragment(
                 return false;
             }
         }
+    }
+
+    // Transfer all partial symbols into the main symbol map
+    for (symid, pval) in partial {
+        let addr = match (pval.lo, pval.hi) {
+            (Some(lo), Some(hi)) => sym::SymAddr::Dol(hi << 16 | lo),
+            (None, None) => continue,
+            _ => return false,
+        };
+        symmap.insert(symid, addr);
     }
 
     for &(code, symid) in templ.snippets {

@@ -116,7 +116,7 @@ where
             write!(f, ",")?;
         }
         if max_size > WRAP_LIST_LEN {
-            write!(f, "\n  {}", elem.res)?;
+            write!(f, "\n    {}", elem.res)?;
         } else {
             write!(f, " {}", elem.res)?;
         }

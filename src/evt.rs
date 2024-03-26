@@ -557,7 +557,7 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Script {
         let mut indent = 0;
         write!(out, "{{\n")?;
         for insn in self {
-            write!(out, "  ")?;
+            write!(out, "    ")?;
             let (ind_out, ind_in) = match insn.opc.indent() {
                 OpcodeIndent::Passthrough
                 | OpcodeIndent::PassthroughRaw
@@ -571,7 +571,7 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Script {
 
             indent -= ind_out;
             for _ in 0..indent {
-                write!(out, "  ")?;
+                write!(out, "    ")?;
             }
 
             insn.dump(out, ctx)?;
