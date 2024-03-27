@@ -4,9 +4,10 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use num::FromPrimitive;
-
 use error::mk_err_wrapper;
+use num::FromPrimitive;
+use object::{build::elf as belf, elf::{self, SHN_UNDEF}, Endianness};
+
 
 use crate::{sym, utils::SaneSize};
 
@@ -25,6 +26,12 @@ pub enum ErrorType {
     NoSection,
     #[error("Relocation is too complex")]
     ComplexRelocation,
+    #[error("Unable to address `{0}` relative to any symbol")]
+    UnaddressableSymbol(SectionAddr),
+    #[error("Unable to find symbol `{0:?}` in symbol database")]
+    SymbolNotFound(sym::SymAddr),
+    #[error("Unable to build elf: {0}")]
+    BuildElfError(object::build::Error),
 }
 
 mk_err_wrapper! { ErrorType }
@@ -287,17 +294,281 @@ pub struct RelFile<'b> {
     relocs: HashMap<u32, Vec<RelocEntry>>,
 }
 
+impl<'b> RelFile<'b> {
+    pub fn to_elf(&self, symdb: &sym::SymbolDatabase) -> Res<Vec<u8>> {
+        let our_id = self.header.id.get();
+        let mut builder = belf::Builder::new(
+            Endianness::Big,
+            false,
+        );
+
+        builder.header.e_type = elf::ET_REL;
+        builder.header.os_abi = elf::ELFOSABI_SYSV;
+        builder.header.abi_version = 0;
+        builder.header.e_machine = elf::EM_PPC;
+
+        // Create all the main program section headers
+        let mut data_cnt = 0;
+        let mut bss_cnt = 0;
+        let mut text_cnt = 0;
+        let mut section_map = BTreeMap::new();
+        let mut local_syms = BTreeMap::new();
+        for (i, sect) in self.sections.iter().enumerate() {
+            let offset = sect.offset();
+            let length = sect.length();
+            if length == 0 && offset.is_none() {
+                continue;
+            }
+
+            let (section_name, sh_type, sh_flags, cnt) = if offset.is_none() {
+                (".bss", elf::SHT_NOBITS, elf::SHF_WRITE, &mut bss_cnt)
+            } else if sect.is_exec() {
+                (
+                    ".text",
+                    elf::SHT_PROGBITS,
+                    elf::SHF_ALLOC | elf::SHF_EXECINSTR,
+                    &mut text_cnt,
+                )
+            } else {
+                (
+                    ".data",
+                    elf::SHT_PROGBITS,
+                    elf::SHF_ALLOC | elf::SHF_WRITE,
+                    &mut data_cnt,
+                )
+            };
+            *cnt += 1;
+            let section_name = if *cnt <= 1 {
+                section_name.into()
+            } else {
+                format!("{section_name}{cnt}")
+            };
+
+            let section = builder.sections.add();
+            let id = section.id();
+            section_map.insert(i, (section.id(), section_name.clone()));
+            section.name = section_name.as_bytes().to_vec().into();
+            section.sh_type = sh_type;
+            section.sh_flags = sh_flags.into();
+            section.sh_offset = 0x800 + u64::from(offset.unwrap_or_default());
+            section.sh_addralign = self.header.align.get().into();
+            section.data = match offset {
+                None => belf::SectionData::UninitializedData(length.into()),
+                Some(offset) => belf::SectionData::Data(
+                    self.data[offset as usize..offset as usize+length as usize].into()
+                ),
+            };
+
+            // Add section symbol.
+            let sect_sym = builder.symbols.add();
+            sect_sym.name = section.name.clone();
+            sect_sym.section = Some(id);
+            sect_sym.set_st_info(elf::STB_LOCAL, elf::STT_SECTION);
+            sect_sym.st_value = 0;
+            sect_sym.st_other = elf::STV_DEFAULT;
+            local_syms.insert(SectionAddr::new(i as u8, 0), sect_sym.id());
+        }
+
+        println!("{local_syms:?}");
+
+        // Popluate the symbol table, hoisting the locals to before the
+        // globals because requirements
+        let mut locals = builder.symbols.count();
+        let mut syms: Vec<_> = symdb.rel_iter(our_id).collect();
+        syms.sort_by_key(|s| s.local as u8);
+        for sym in syms {
+            let saddr = sym.section_addr();
+            let (sid, _) = section_map.get(&saddr.sect.into())
+                .ok_or_else(|| error!(ErrorType::BadSection(saddr.sect)))?;
+            if sym.local {
+                locals += 1;
+            }
+
+            let elf_sym = builder.symbols.add();
+            elf_sym.name = sym.name.as_bytes().to_vec().into();
+            elf_sym.section = Some(*sid);
+            elf_sym.set_st_info(if sym.local {
+                elf::STB_LOCAL
+            } else {
+                elf::STB_GLOBAL
+            }, match sym.value_type {
+                sym::DataType::Simple(sym::SimpleType::Function) => elf::STT_FUNC,
+                _ => elf::STT_OBJECT,
+            });
+            elf_sym.st_value = saddr.offset.into();
+            elf_sym.st_other = elf::STV_DEFAULT;
+            local_syms.insert(saddr, elf_sym.id());
+        }
+
+        // Prepare symbol and string table
+        let section = builder.sections.add();
+        section.name = (b".shstrtab" as &[u8]).into();
+        section.sh_type = elf::SHT_STRTAB;
+        section.sh_addralign = 1;
+        section.data = belf::SectionData::SectionString;
+
+        let section = builder.sections.add();
+        let shstrtab_id = section.id();
+        section.name = (b".strtab" as &[u8]).into();
+        section.sh_type = elf::SHT_STRTAB;
+        section.sh_addralign = 1;
+        section.data = belf::SectionData::String;
+
+        let section = builder.sections.add();
+        let symtab_id = section.id();
+        section.name = (b".symtab" as &[u8]).into();
+        section.sh_link_section = Some(shstrtab_id);
+        section.sh_info_section = None;
+        section.sh_info = locals as u32;
+        section.sh_addralign = 4;
+        section.sh_type = elf::SHT_SYMTAB;
+        section.data = belf::SectionData::Symbol;
+
+        // Add all relocations into a temporary storage, categorizing by
+        // section. We then transfer all of them at once
+        let mut relocs = BTreeMap::new();
+        let mut cur_addr: Option<SectionAddr> = None;
+        let mut known_syms = HashMap::new();
+        for (file, rel) in self.relocations() {
+            // Always increment offset
+            cur_addr.as_mut().map(|a| *a += rel.offset.get().into());
+
+            // Translate the relocation type from rel to elf format.
+            let rel_rtype = rel.rtype().map_err(|rt| error!(InvalidRelocType(rt)))?;
+            let r_type = match rel_rtype {
+                ppcdis::RelocType::PPCNone => continue,
+                ppcdis::RelocType::PPCAddr32 => elf::R_PPC_ADDR32,
+                ppcdis::RelocType::PPCAddr24 => elf::R_PPC_ADDR24,
+                ppcdis::RelocType::PPCAddr16 => elf::R_PPC_ADDR16,
+                ppcdis::RelocType::PPCAddr16Lo => elf::R_PPC_ADDR16_LO,
+                ppcdis::RelocType::PPCAddr16Hi => elf::R_PPC_ADDR16_HI,
+                ppcdis::RelocType::PPCAddr16Ha => elf::R_PPC_ADDR16_HA,
+                ppcdis::RelocType::PPCAddr14 => elf::R_PPC_ADDR14,
+                ppcdis::RelocType::PPCAddr14BrTaken => elf::R_PPC_ADDR14_BRTAKEN,
+                ppcdis::RelocType::PPCAddr14BrNotTaken => elf::R_PPC_ADDR14_BRNTAKEN,
+                ppcdis::RelocType::PPCRel24 => elf::R_PPC_REL24,
+                ppcdis::RelocType::PPCRel14 => elf::R_PPC_REL14,
+                ppcdis::RelocType::PPCRel14BrTaken => elf::R_PPC_REL14_BRTAKEN,
+                ppcdis::RelocType::PPCRel14BrNotTaken => elf::R_PPC_REL14_BRNTAKEN,
+                ppcdis::RelocType::RvlNone => continue,
+                ppcdis::RelocType::RvlSect => {
+                    cur_addr = Some(SectionAddr::new(
+                        rel.section(),
+                        rel.offset.get().into(),
+                    ));
+                    continue;
+                }
+                ppcdis::RelocType::RvlEnd => {
+                    cur_addr = None;
+                    continue;
+                }
+            };
+
+            // Compute the symbol id and addend that this is relative to
+            let target_saddr = SectionAddr::new(rel.section, rel.addend());
+            let (sym, addend) = if file == our_id {
+                // A local relocation would use our local syms
+                let (base_saddr, sid) = local_syms.range(..=target_saddr)
+                    .last()
+                    .filter(|(addr, _)| addr.sect == target_saddr.sect)
+                    .or_else(|| local_syms
+                        .range(target_saddr..)
+                        .next()
+                        .filter(|(addr, _)| addr.sect == target_saddr.sect))
+                    .ok_or_else(|| error!(UnaddressableSymbol(target_saddr)))?;
+
+                (*sid, target_saddr.offset as i32 - base_saddr.offset as i32)
+            } else {
+                // Otherwise search in the symdb or our known_syms mapping for
+                // a symbol to link against
+                let target_symaddr = if file == 0 {
+                    sym::SymAddr::Dol(rel.addend.get())
+                } else {
+                    sym::SymAddr::Rel(file, target_saddr)
+                };
+                match known_syms.entry(target_symaddr) {
+                    hm::Entry::Occupied(ent) => *ent.get(),
+                    hm::Entry::Vacant(ent) => {
+                        let (syment, addend) = match symdb.get_near(target_symaddr) {
+                            Some(ent) => ent,
+                            None => {
+                                eprintln!("ERROR: symbol not found: {target_symaddr:?}");
+                                continue;
+                            }
+                        };
+                        //let syment = symdb.get(target_symaddr)
+                        //    .ok_or_else(|| error!(SymbolNotFound(target_symaddr)))?;
+                        let sym = builder.symbols.add();
+                        sym.name = syment.name.as_bytes().to_vec().into();
+                        sym.section = None;
+                        sym.st_shndx = SHN_UNDEF;
+                        sym.set_st_info(elf::STB_GLOBAL, elf::STT_NOTYPE);
+                        sym.st_value = 0;
+                        sym.st_other = elf::STV_DEFAULT;
+                        ent.insert((sym.id(), addend));
+                        (sym.id(), addend)
+                    }
+                }
+            };
+
+            let addr = cur_addr.ok_or_else(|| error!(NoSection))?;
+            relocs.entry(addr.sect)
+                .or_insert_with(Vec::new)
+                .push(belf::Relocation {
+                    r_offset: addr.offset.into(),
+                    symbol: Some(sym),
+                    r_type,
+                    r_addend: addend.into(),
+                });
+        }
+
+        // Add relocation section for each section
+        for (section, relocs) in relocs {
+            let (our_sid, name) = section_map.get(&section.into())
+                .expect("Section should exist");
+
+            let section = builder.sections.add();
+            section.name = format!(".rela{name}").into_bytes().into();
+            section.sh_link_section = Some(symtab_id);
+            section.sh_info_section = Some(*our_sid);
+            section.sh_addralign = 4;
+            section.sh_type = elf::SHT_RELA;
+            section.sh_entsize = 0xc;
+            section.data = belf::SectionData::Relocation(relocs);
+        }
+
+        let mut out = Vec::new();
+        builder.write(&mut out).map_err(|e| error!(BuildElfError(e)))?;
+        Ok(out)
+    }
+}
+
 enum Size {
     Length(usize),
     Bytes(usize),
 }
 
-fn slice_from_bytes<T: Pod>(data: &[u8], offset: usize, len: Size) -> &[T] {
+fn bytes_to_vec<T: Pod + Copy>(data: &[u8], mut offset: usize, len: Size) -> Vec<T> {
     let size = match len {
         Size::Length(len) => size_of::<T>() * len,
         Size::Bytes(sz) => sz,
     };
-    bytemuck::cast_slice(&data[offset..offset + size])
+    match bytemuck::try_cast_slice(&data[offset..offset + size]) {
+        Ok(res) => res.to_vec(),
+        Err(bytemuck::PodCastError::TargetAlignmentGreaterAndInputNotAligned) => {
+            let mut ret = Vec::new();
+            let end = offset + size;
+            while offset < end {
+                ret.push(bytemuck::pod_read_unaligned(
+                    &data[offset..offset+size_of::<T>()]
+                ));
+                offset += size_of::<T>();
+            }
+
+            ret
+        }
+        Err(e) => panic!("cast_slice>{e}"),
+    }
 }
 
 impl<'b> RelFile<'b> {
@@ -305,19 +576,17 @@ impl<'b> RelFile<'b> {
         let header: RelHeader =
             bytemuck::pod_read_unaligned(&data[0..size_of::<RelHeader>()]);
 
-        let sections = slice_from_bytes(
+        let sections = bytes_to_vec(
             data,
             header.section_info_offset.get() as usize,
             Size::Length(header.num_sections.get() as usize),
-        )
-        .to_vec();
+        );
 
-        let imp: Vec<ImpEntry> = slice_from_bytes(
+        let imp: Vec<ImpEntry> = bytes_to_vec(
             data,
             header.imp_offset.get() as usize,
             Size::Bytes(header.imp_size.get() as usize),
-        )
-        .to_vec();
+        );
 
         let mut relocs = HashMap::new();
         let mut reloc_off = header.rel_offset.get() as usize;
@@ -328,7 +597,7 @@ impl<'b> RelFile<'b> {
                 hm::Entry::Vacant(ent) => ent.insert(Vec::new()),
             };
             loop {
-                let ent: RelocEntry = *bytemuck::from_bytes(
+                let ent: RelocEntry = bytemuck::pod_read_unaligned(
                     &data[reloc_off..reloc_off + size_of::<RelocEntry>()],
                 );
                 tbl.push(ent);

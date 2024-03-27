@@ -32,6 +32,10 @@ struct Cli {
     #[arg(short = 'r', long = "mod-root")]
     mod_root: String,
 
+    /// Load base mod information. By default we don't do it.
+    #[arg(short = 'L', long)]
+    load_base_info: bool,
+
     /// The game path from the ISO root used to locate all the files
     ///
     /// Defaults to P-G8ME/files
@@ -89,6 +93,13 @@ enum RelCommands {
     Scripts {
         /// File path to the symbol csv database for the game
         symdb: String,
+    },
+    /// Convert the REL file into an ELF file
+    Elf {
+        /// File path to the symbol csv database for the game
+        symdb: String,
+        /// Path to elf file to write to
+        out: String,
     },
     /// Dump the C source of the REL file
     Source {
@@ -327,6 +338,23 @@ fn build_cmd(env: &Env) -> Result<(), anyhow::Error> {
 fn main() -> Result<(), anyhow::Error> {
     let cli = Cli::parse();
     let env = Env::new(&cli)?;
+
+    let mut area_map = HashMap::new();
+    if cli.load_base_info {
+        for file in env.base_dir.join("P-G8ME/files/rel/").read_dir()? {
+            let file = file?;
+            let name = file.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".rel") {
+                continue;
+            }
+
+            let data = fs::read(file.path())?;
+            let rel = rel::RelFile::new(&data);
+            let id = rel.header().id.get();
+            area_map.insert(name[..name.len() - 4].to_string(), id);
+        }
+    }
+
     match cli.command {
         Command::Build => build_cmd(&env),
         Command::Message { cmd } => {
@@ -367,7 +395,6 @@ fn main() -> Result<(), anyhow::Error> {
                     let mut overlay = rel::RelocOverlay::new(&rel);
                     overlay.resolve_relocations(&HashMap::new(), true)?;
 
-                    let mut area_map = HashMap::new();
                     area_map.insert(area_name.into(), rel.header().id.get());
                     let symdb = sym::SymbolDatabase::new(
                         area_map,
@@ -378,6 +405,17 @@ fn main() -> Result<(), anyhow::Error> {
                     parser.add_from_symdb(&symdb)?;
                     parser.dump_scripts(&symdb, &sym::StringsMap::new());
                 }
+                RelCommands::Elf { symdb, out } => {
+                    let area_id = rel.header().id.get();
+                    area_map.insert(area_name.into(), area_id);
+                    let symdb = sym::SymbolDatabase::new(
+                        area_map,
+                        sym::RawSymtab::from_reader(File::open(symdb)?)?,
+                    );
+                    let elf = rel.to_elf(&symdb)?;
+                    let mut out_file = File::create(out)?;
+                    out_file.write_all(&elf)?;
+                }
                 RelCommands::Source { symdb, outdir } => {
                     let outdir = PathBuf::from(outdir);
                     fs::create_dir_all(&outdir)?;
@@ -385,7 +423,6 @@ fn main() -> Result<(), anyhow::Error> {
                     let mut overlay = rel::RelocOverlay::new(&rel);
                     overlay.resolve_relocations(&HashMap::new(), true)?;
 
-                    let mut area_map = HashMap::new();
                     let area_id = rel.header().id.get();
                     area_map.insert(area_name.into(), area_id);
                     let symdb = sym::SymbolDatabase::new(

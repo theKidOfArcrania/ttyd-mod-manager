@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Write as _},
     io,
     mem::size_of, ops::{Add, AddAssign},
@@ -509,7 +509,7 @@ pub struct SymbolDatabase {
     primary_name: HashMap<SymAddr, String>,
     addr_names: HashMap<SymAddr, Vec<String>>,
     syms: HashMap<String, SymAddr>,
-    raw_ent: HashMap<SymAddr, RawSymEntry>,
+    raw_ent: BTreeMap<SymAddr, RawSymEntry>,
     by_area: HashMap<u32, BTreeSet<rel::SectionAddr>>,
     dol_addrs: BTreeSet<u32>,
     area_map: HashMap<String, u32>,
@@ -574,6 +574,33 @@ impl SymbolDatabase {
 
     pub fn get(&self, addr: SymAddr) -> Option<RawSymEntry> {
         self.raw_ent.get(&addr).map(Clone::clone)
+    }
+
+    pub fn get_near(&self, addr: SymAddr) -> Option<(RawSymEntry, i32)> {
+        fn relativize(a: SymAddr, b: SymAddr) -> Option<i32>{
+            match (a, b) {
+                (SymAddr::Dol(a), SymAddr::Dol(b)) => Some(b as i32 - a as i32),
+                (SymAddr::Rel(file_a, sa), SymAddr::Rel(file_b, sb)) => {
+                    if file_a != file_b || sa.sect != sb.sect {
+                        None
+                    } else {
+                        Some(sb.offset as i32 - sa.offset as i32)
+                    }
+                }
+                _ => None,
+            }
+        }
+        let before = match self.raw_ent.range(..=addr).last() {
+            None => None,
+            Some((base, ent)) => relativize(*base, addr).map(|off| (ent.clone(), off))
+        };
+
+        if before.is_some() {
+            return before;
+        }
+
+        let (base, ent) = self.raw_ent.range(addr..).next()?;
+        Some((ent.clone(), relativize(*base, addr)?))
     }
 
     pub fn name_of(&self, addr: SymAddr) -> Option<&str> {

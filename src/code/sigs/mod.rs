@@ -84,11 +84,19 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
     #[allow(non_upper_case_globals)]
     const ctors: usize = 0;
     #[allow(non_upper_case_globals)]
-    const rel_set_evt_addr: usize = 1;
+    const relSetEvtAddr: usize = 1;
     #[allow(non_upper_case_globals)]
-    const area_str: usize = 2;
+    const map_name: usize = 2;
     #[allow(non_upper_case_globals)]
     const evt: usize = 3;
+    #[allow(non_upper_case_globals)]
+    const relSetBtlAddr: usize = 4;
+    #[allow(non_upper_case_globals)]
+    const btlsetup_tbl: usize = 5;
+    #[allow(non_upper_case_globals)]
+    const btl_no_tbl: usize = 6;
+    #[allow(non_upper_case_globals)]
+    const area_name: usize = 7;
     CCodeTemplate {
         name: "prolog",
         templ: TemplateRegExp::Concat(&[
@@ -123,15 +131,32 @@ static PROLOG_TEMPL: CCodeTemplate<'static> = {
                 constants: &[],
                 snippets: &templated!(
                     concat!(
-                        "\n    {rel_set_evt_addr}({area_str}, {evt});",
+                        "\n    {relSetEvtAddr}({map_name}, {evt});",
                     )
                 ),
                 asm: &insns!(
-                    addis r3, r0, [area_str@ha];
+                    addis r3, r0, [map_name@ha];
                     addis r4, r0, [evt@ha];
-                    addi r3, r3, [area_str@lo];
+                    addi r3, r3, [map_name@lo];
                     addi r4, r4, [evt@lo];
-                    bl [rel_set_evt_addr@@rel];
+                    bl [relSetEvtAddr@@rel];
+                ),
+            })),
+            TemplateRegExp::Rep(&TemplateRegExp::Fragment(CCodeTemplateFragment {
+                constants: &[],
+                snippets: &templated!(
+                    concat!(
+                        "\n    {relSetBtlAddr}({area_name}, {btlsetup_tbl}, {btl_no_tbl});",
+                    )
+                ),
+                asm: &insns!(
+                    addis r3, r0, [area_name@ha];
+                    addis r4, r0, [btlsetup_tbl@ha];
+                    addis r5, r0, [btl_no_tbl@ha];
+                    addi r3, r3, [area_name@lo];
+                    addi r4, r4, [btlsetup_tbl@lo];
+                    addi r5, r5, [btl_no_tbl@lo];
+                    bl [relSetBtlAddr@@rel];
                 ),
             })),
             TemplateRegExp::Fragment(CCodeTemplateFragment {

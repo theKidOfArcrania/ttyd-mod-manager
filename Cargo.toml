@@ -23,6 +23,7 @@ interop = { path = "./crates/interop", features = ["derive"] }
 ppcdis = { path = "./crates/ppcdis" }
 templated = { path = "./crates/templated" }
 convert_case = "0.6.0"
+object = { version = "0.34.0", features = ["write", "build"] }
 
 [features]
 spm = []

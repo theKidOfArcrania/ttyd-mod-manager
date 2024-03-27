@@ -393,14 +393,22 @@ pub struct BattleUnitDefenseAttr {
 #[repr(C)]
 pub struct BattleUnitKind {
     m_unit_type: BattleUnitType, //0x0
-    field_0x4: [u8; 0xC - 0x4], //0x4
+    m_field_0x4: ConstPtr<str>, //0x4
+    field_0x8: [u8; 0xC - 0x8], //0x8
     m_danger_hp: u8, //0xC
     m_peril_hp: u8, //0xD
     m_level: u8, //0xE
     m_bonus_exp: u8, //0xF
-    field_0x10: [u8; 0xB8 - 0x10], //0x10
+    field_0x10: [u8; 0x9c - 0x10], //0x10
+    m_sfx_0x9c: ConstPtr<str>, //0x9c
+    m_sfx_0xa0: ConstPtr<str>, //0xa0
+    m_sfx_0xa4: ConstPtr<str>, //0xa4
+    m_sfx_0xa8: ConstPtr<str>, //0xa8
+    field_0xac: u32, //0xac
+    defenses: Ptr<StatusVulnerability>, //0xb0
+    field_0xb4: u32, //0xb4
     m_parts: Ptr<[u8]>, //0xB8 // TODO BattleWorkUnitPart
-    field_0xbc: [u8; 4], //0xBC
+    init_evt: Ptr<evt::Script>, //0xBC
     data_table: Ptr<BattleDataEntry>, //0xC0
 }
 
@@ -471,8 +479,9 @@ struct stub(u32);
 impl<Ctx> interop::CDump<Ctx> for stub {
     type Error = std::fmt::Error;
 
-    fn dump(&self, _out: &mut interop::Dumper, _ctx: &Ctx) -> Result<(), Self::Error> {
-        Err(std::fmt::Error)
+    fn dump(&self, out: &mut interop::Dumper, _ctx: &Ctx) -> Result<(), Self::Error> {
+        write!(out, "<stub>")
+        //Err(std::fmt::Error)
     }
 }
 
@@ -480,7 +489,11 @@ impl<P: interop::Ptr> interop::CRead<P> for stub {
     fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
         R: interop::CReader<P> + ?Sized
     {
-        Err(reader.error_custom("Not implemented!".into()))
+        while !reader.eof() {
+            reader.read_rel_u8()?;
+        }
+        Ok(Self(0))
+        //Err(reader.error_custom("Not implemented!".into()))
     }
 }
 
@@ -506,8 +519,8 @@ macro_rules! mk_clsdata {
             impl<Ctx> interop::CDump<Ctx> for $tp {
                 type Error = std::fmt::Error;
 
-                fn dump(&self, _out: &mut interop::Dumper, _ctx: &Ctx) -> Result<(), Self::Error> {
-                    Err(std::fmt::Error)
+                fn dump(&self, out: &mut interop::Dumper, ctx: &Ctx) -> Result<(), Self::Error> {
+                    self.0.dump(out, ctx)
                 }
             }
 
@@ -515,7 +528,7 @@ macro_rules! mk_clsdata {
                 fn read<R>(reader: &mut R) -> Result<Self, R::Error> where
                     R: interop::CReader<P> + ?Sized
                 {
-                    Err(reader.error_custom("Not implemented!".into()))
+                    stub::read(reader).map(Self)
                 }
             }
         )?)*
