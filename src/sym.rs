@@ -284,7 +284,7 @@ impl RawSymtab {
 
         let headers = rdr.headers()?.clone();
         let replmap =
-            HashMap::from([('（', "$op"), ('）', "$cp"), ('$', "$$")]);
+            HashMap::from([('（', "__op__"), ('）', "__cp__"), ('$', "_")]);
         let special_rel = HashSet::from([
             String::from("_unresolved"),
             "_prolog".into(),

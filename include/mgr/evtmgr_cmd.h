@@ -1,10 +1,13 @@
 #ifndef _EVT_H_
 #define _EVT_H_
 
+#include <platform.h>
+
 typedef long Bytecode;
 typedef Bytecode EvtScript[];
 
-enum EvtOpcode
+#pragma enumsalwaysint off
+typedef enum EvtOpcode
 {
 /* 0x00 */ EVT_OPC_NEXT,
 /* 0x01 */ EVT_OPC_END_SCRIPT,
@@ -126,13 +129,13 @@ enum EvtOpcode
 /* 0x75 */ EVT_OPC_DEBUG_NAME,
 /* 0x76 */ EVT_OPC_DEBUG_REM,
 /* 0x77 */ EVT_OPC_DEBUG_BP
-};
+} EvtOpcode;
+#pragma enumsalwaysint on
 
 #define ARRAY_COUNT(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define EVT_CMD(opcode, ...) \
-    (((sizeof((Bytecode[]){__VA_ARGS__})/sizeof(Bytecode)) << 16) | opcode) \
-    __VA_OPT__(,) __VA_ARGS__
+    (((sizeof((Bytecode[]){__VA_ARGS__})/sizeof(Bytecode)) << 16) | opcode), __VA_ARGS__
 
 #define END_SCRIPT()                    EVT_OPC_END_SCRIPT,
 #define RETURN()                        EVT_OPC_END_EVT,
@@ -142,9 +145,9 @@ enum EvtOpcode
 #define GOTO(LABEL_ID)                  EVT_CMD(EVT_OPC_GOTO, LABEL_ID),
 
 #define LOOP(LOOP_COUNT)                EVT_CMD(EVT_OPC_DO, LOOP_COUNT),
-#define END_LOOP                        EVT_CMD(EVT_OPC_WHILE),
-#define BREAK_LOOP                      EVT_CMD(EVT_OPC_DO_BREAK),
-#define CONTINUE_LOOP                   EVT_CMD(EVT_OPC_DO_CONTINUE),
+#define END_LOOP()                      EVT_OPC_WHILE,
+#define BREAK_LOOP()                    EVT_OPC_DO_BREAK,
+#define CONTINUE_LOOP()                 EVT_OPC_DO_CONTINUE,
 
 #define WAIT_FRAMES(FRAMES)             EVT_CMD(EVT_OPC_WAIT_FRM, FRAMES),
 #define WAIT_MS(MILLISECONDS)           EVT_CMD(EVT_OPC_WAIT_MSEC, MILLISECONDS),
@@ -176,8 +179,8 @@ enum EvtOpcode
 #define IF_BITS_SET(var1, var2)         EVT_CMD(EVT_OPC_IF_FLAG, var1, var2),
 #define IF_BITS_CLEAR(var1, var2)       EVT_CMD(EVT_OPC_IF_NOT_FLAG, var1, var2),
 
-#define ELSE                            EVT_CMD(EVT_OPC_ELSE),
-#define END_IF                          EVT_CMD(EVT_OPC_END_IF),
+#define ELSE()                          EVT_OPC_ELSE,
+#define END_IF()                        EVT_OPC_END_IF,
 #define SWITCH(expr)                    EVT_CMD(EVT_OPC_SWITCH, expr),
 #define SWITCH_R(expr)                  EVT_CMD(EVT_OPC_SWITCHR, expr),
 #define CASE_INT_EQ(expr)               EVT_CMD(EVT_OPC_CASE_EQUAL, expr),
@@ -186,14 +189,14 @@ enum EvtOpcode
 #define CASE_INT_GT(expr)               EVT_CMD(EVT_OPC_CASE_LARGE, expr),
 #define CASE_INT_LE(expr)               EVT_CMD(EVT_OPC_CASE_SMALL_EQUAL, expr),
 #define CASE_INT_GE(expr)               EVT_CMD(EVT_OPC_CASE_LARGE_EQUAL, expr),
-#define CASE_DEFAULT                    EVT_CMD(EVT_OPC_CASE_ETC),
+#define CASE_DEFAULT()                  EVT_OPC_CASE_ETC,
 #define CASE_OR_EQ(val)                 EVT_CMD(EVT_OPC_CASE_OR, val),
 #define CASE_AND_EQ(val)                EVT_CMD(EVT_OPC_CASE_AND, val),
 #define CASE_FLAG(val)                  EVT_CMD(EVT_OPC_CASE_FLAG, val),
-#define CASE_END                        EVT_CMD(EVT_OPC_CASE_END)
+#define CASE_END()                      EVT_OPC_CASE_END
 #define CASE_BETWEEN(LOWER, UPPER)      EVT_CMD(EVT_OPC_CASE_BETWEEN, LOWER, UPPER),
-#define BREAK_SWITCH                    EVT_CMD(EVT_OPC_SWITCH_BREAK)
-#define END_SWITCH                      EVT_CMD(EVT_OPC_END_SWITCH)
+#define BREAK_SWITCH()                  EVT_OPC_SWITCH_BREAK
+#define END_SWITCH()                    EVT_OPC_END_SWITCH
 
 #define SET(expr1, expr2)               EVT_CMD(2, EVT_OPC_SET, expr1, expr2),
 #define SET_RAW(expr1, expr2)           EVT_CMD(2, EVT_OPC_SETI, expr1, expr2),
@@ -257,7 +260,7 @@ enum EvtOpcode
 #define LOAD_INT_IND(expr1, expr2)      EVT_CMD(EVT_OPC_GETR, expr1, expr2),
 #define LOAD_FLOAT_IND(expr1, expr2)    EVT_CMD(EVT_OPC_GETRF, expr1, expr2),
 
-#define CALL_CPP_SYNC(FUNC, ARGS...)         EVT_CMD(EVT_OPC_USER_FUNC, (Bytecode) FUNC, ##ARGS),
+#define CALL_CPP_SYNC(FUNC, ...)    EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC), ##__VA_ARGS__),
 #define CALL_SCRIPT_ASYNC(script)            EVT_CMD(EVT_OPC_RUN_EVT, script),
 #define CALL_SCRIPT_ASYNC_TID(script, expr)  EVT_CMD(EVT_OPC_RUN_EVT_ID, script, expr),
 #define CALL_SCRIPT_SYNC(script)             EVT_CMD(EVT_OPC_RUN_CHILD_EVT, script),
@@ -275,12 +278,12 @@ enum EvtOpcode
 #define THREAD_RESUME_TID(expr)              EVT_CMD(EVT_OPC_START_ID, expr),
 #define CHECK_THREAD_RUNNING(expr, ret)      EVT_CMD(EVT_OPC_CHK_EVT, expr, ret,),
 
-#define BEGIN_THREAD                         EVT_CMD(EVT_OPC_INLINE_EVT),
+#define BEGIN_THREAD()                       EVT_OPC_INLINE_EVT,
 #define BEGIN_THREAD_TID(expr),              EVT_CMD(EVT_OPC_INLINE_EVT_ID, expr),
-#define END_THREAD                           EVT_CMD(EVT_OPC_END_INLINE),
-#define BEGIN_CHILD_THREAD                   EVT_CMD(EVT_OPC_BROTHER_EVT),
+#define END_THREAD()                         EVT_OPC_END_INLINE,
+#define BEGIN_CHILD_THREAD()                 EVT_OPC_BROTHER_EVT,
 #define BEGIN_CHILD_THREAD_TID(expr)         EVT_CMD(EVT_OPC_BROTHER_EVT_ID, expr),
-#define END_CHILD_THREAD                     EVT_CMD(EVT_OPC_END_BROTHER),
+#define END_CHILD_THREAD()                   EVT_OPC_END_BROTHER,
 
 // Data types
 #define EVTDAT_ADDR_MAX -290000000
@@ -374,5 +377,31 @@ enum EvtOpcode
 #define LFlagD LocalFlag(13)
 #define LFlagE LocalFlag(14)
 #define LFlagF LocalFlag(15)
+
+typedef enum EvtReturnCodes {
+  EVT_RETURN_BLOCK = 0,
+  EVT_RETURN_YIELD,
+  EVT_RETURN_DONE,
+  EVT_RETURN_REPEAT,
+  EVT_RETURN_FINISH = 255,
+} EvtReturnCodes;
+
+struct EventEntry;
+s32 evtmgrCmd(struct EventEntry* entry);
+s32 evtGetValue(struct EventEntry* entry, s32 index);
+s32 evtGetNumber(struct EventEntry* entry, s32 index);
+s32 evtSetValue(struct EventEntry* entry, s32 index, s32 value);
+f32 evtGetFloat(struct EventEntry* entry, s32 index);
+f32 evtSetFloat(struct EventEntry* entry, s32 index, f32 value);
+
+//Used to define native C functions that scripts can call
+#define USERFUNC_DEF(function) \
+	EvtReturnCodes (function)(EventEntry* event, BOOL isFirstCall)
+
+#ifdef __MWERKS__
+#define PTR(value) ((s32)(value))
+#else
+#define PTR(value) ((void*)(value))
+#endif
 
 #endif //_EVT_H_
