@@ -155,11 +155,16 @@ impl interop::CDump<sym::AddrDumpCtx<'_>> for Expr {
         ctx: &sym::AddrDumpCtx,
     ) -> Result<(), Self::Error> {
         match self {
-            Expr::Address(addr) => sym::SymAddr::Dol(*addr).dump(out, ctx),
-            Expr::AddressSym(local) => sym::SymAddr::Rel(
-                ctx.area(),
-                *local,
-            ).dump(out, ctx),
+            Expr::Address(addr) => {
+                write!(out, "PTR(")?;
+                sym::SymAddr::Dol(*addr).dump(out, ctx)?;
+                write!(out, ")")
+            }
+            Expr::AddressSym(local) => {
+                write!(out, "PTR(")?;
+                sym::SymAddr::Rel(ctx.area(), *local).dump(out, ctx)?;
+                write!(out, ")")
+            }
             Expr::Float(fl) => write!(out, "FLOAT({fl:.5})"),
             Expr::UF(id) => write!(out, "UF({id})"),
             Expr::UW(id) => write!(out, "UW({id})"),

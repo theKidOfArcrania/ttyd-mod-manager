@@ -228,6 +228,7 @@ pub enum Data {
     Double(f64),
     Zero(Zeroed),
     Evt(evt::Script),
+    // TODO: convert to Vec type
     Vec3([f32; 3]),
     Struct(clsdata::ClsData),
 }

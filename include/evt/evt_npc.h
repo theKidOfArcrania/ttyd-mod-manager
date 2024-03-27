@@ -71,5 +71,7 @@ USERFUNC_DEF(evt_npc_set_tribe);
 USERFUNC_DEF(evt_npc_set_ry);
 USERFUNC_DEF(evt_npc_set_anim);
 USERFUNC_DEF(evt_npc_set_autotalkpose);
+USERFUNC_DEF(evt_npc_jump_position_nohit);
+USERFUNC_DEF(evt_npc_wait_pera);
 
 #endif

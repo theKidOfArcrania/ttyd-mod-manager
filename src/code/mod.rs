@@ -149,6 +149,7 @@ pub struct CCode {
 // TODO: vars with global values
 #[derive(Clone, Copy, Debug)]
 pub struct CCodeTemplateFragment<'a> {
+    // TODO:
     constants: &'a [usize],
     snippets: &'a [(&'a str, Option<usize>)],
     asm: &'a [InsnTempl<'a>],
@@ -401,6 +402,7 @@ impl PartialAddress {
                 let value = value & 0xffff;
                 ha = Some(value);
                 if let Some(lo) = lo {
+                    // TODO: check mapdraw is bad?
                     hi = Some(value - ((lo + 0x8000) >> 16));
                 } else if let Some(ha) = ha {
                     if ha.wrapping_sub(value) > 1 {

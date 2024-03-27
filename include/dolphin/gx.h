@@ -24,6 +24,9 @@ typedef u8 GXBool;
 // Pack value into bitfield
 #define GX_BITFIELD_SET(field, pos, size, value) (field) = __rlwimi((field), (value), 31 - (pos) - (size) + 1, (pos), (pos) + (size)-1)
 
+#define GX_VIEWPORT_SZ 6
+#define GX_PROJECTION_SZ 7
+
 #pragma enumalwaysint off
 typedef enum _GXCullMode {
 	GX_CULL_NONE,

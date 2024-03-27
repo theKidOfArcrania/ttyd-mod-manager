@@ -6,6 +6,7 @@
 
 USERFUNC_DEF(evt_snd_bgmon);
 USERFUNC_DEF(evt_snd_bgmoff);
+USERFUNC_DEF(evt_snd_bgmoff_f);
 USERFUNC_DEF(evt_snd_bgm_scope);
 USERFUNC_DEF(evt_snd_envon);
 USERFUNC_DEF(evt_snd_envoff);

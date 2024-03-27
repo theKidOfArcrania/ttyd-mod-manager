@@ -155,12 +155,12 @@ typedef enum EvtOpcode
 // //stall thread until expression is false
 #define WAIT_UNTIL(expr)                EVT_CMD(EVT_OPC_HALT, expr),
 
-#define IF_STR_EQ(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_EQUAL, var1, var2,),
-#define IF_STR_NE(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_NOT_EQUAL, var1, var2),
-#define IF_STR_LT(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_SMALL, var1, var2),
-#define IF_STR_GT(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_LARGE, var1, var2),
-#define IF_STR_LE(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_SMALL_EQUAL, var1, var2),
-#define IF_STR_GE(var1, var2)           EVT_CMD(EVT_OPC_IF_STR_LARGE_EQUAL, var1, var2),
+#define IF_STRING_EQ(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_EQUAL, var1, var2),
+#define IF_STRING_NE(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_NOT_EQUAL, var1, var2),
+#define IF_STRING_LT(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_SMALL, var1, var2),
+#define IF_STRING_GT(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_LARGE, var1, var2),
+#define IF_STRING_LE(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_SMALL_EQUAL, var1, var2),
+#define IF_STRING_GE(var1, var2)        EVT_CMD(EVT_OPC_IF_STR_LARGE_EQUAL, var1, var2),
 
 #define IF_FLOAT_EQ(var1, var2)         EVT_CMD(EVT_OPC_IFF_EQUAL, var1, var2),
 #define IF_FLOAT_NE(var1, var2)         EVT_CMD(EVT_OPC_IFF_NOT_EQUAL, var1, var2),
@@ -260,7 +260,7 @@ typedef enum EvtOpcode
 #define LOAD_INT_IND(expr1, expr2)      EVT_CMD(EVT_OPC_GETR, expr1, expr2),
 #define LOAD_FLOAT_IND(expr1, expr2)    EVT_CMD(EVT_OPC_GETRF, expr1, expr2),
 
-#define CALL_CPP_SYNC(FUNC, ...)    EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC), ##__VA_ARGS__),
+#define CALL_CPP_SYNC(FUNC, ARGS...)    EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC), ##ARGS),
 #define CALL_SCRIPT_ASYNC(script)            EVT_CMD(EVT_OPC_RUN_EVT, script),
 #define CALL_SCRIPT_ASYNC_TID(script, expr)  EVT_CMD(EVT_OPC_RUN_EVT_ID, script, expr),
 #define CALL_SCRIPT_SYNC(script)             EVT_CMD(EVT_OPC_RUN_CHILD_EVT, script),
@@ -397,6 +397,7 @@ f32 evtSetFloat(struct EventEntry* entry, s32 index, f32 value);
 //Used to define native C functions that scripts can call
 #define USERFUNC_DEF(function) \
 	EvtReturnCodes (function)(EventEntry* event, BOOL isFirstCall)
+#define EVT_DEF(name) extern Bytecode name[]
 
 #ifdef __MWERKS__
 #define PTR(value) ((s32)(value))

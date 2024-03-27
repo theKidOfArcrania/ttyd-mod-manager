@@ -36,12 +36,14 @@ typedef struct SmartWork {
 	u32 waitsync; //0xE018
 } SmartWork;
 
+extern void* mapalloc_base_ptr;
+
 void memInit(void);
 void memClear(HEAP_TYPE heap);
 void* __memAlloc(HEAP_TYPE heap, u32 size);
 void __memFree(HEAP_TYPE heap, void* ptr);
-void* _mapAlloc(u32 size);
-void* _mapAllocTail(u32 size);
+void* _mapAlloc(void* base, u32 size);
+void* _mapAllocTail(void* base, u32 size);
 void _mapFree(void* alloc);
 void smartInit(void);
 void smartReInit(void);
