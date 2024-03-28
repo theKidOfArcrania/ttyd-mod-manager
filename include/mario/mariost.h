@@ -8,6 +8,11 @@
 #include <evt/evt_lottery.h>
 #include <countdown.h>
 
+struct AA {
+  FadeType a;
+  int b;
+};
+
 typedef struct GlobalWork {
   s32 flags; //0x0
   s32 framerate; //0x4

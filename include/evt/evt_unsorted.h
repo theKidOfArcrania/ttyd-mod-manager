@@ -31,6 +31,7 @@ USERFUNC_DEF(evt_mario_adjust_dir);
 USERFUNC_DEF(evt_mario_set_dir);
 USERFUNC_DEF(evt_mario_key_onoff);
 USERFUNC_DEF(evt_mario_kill_party);
+USERFUNC_DEF(evt_mario_balloon_off);
 
 USERFUNC_DEF(evt_msg_print);
 

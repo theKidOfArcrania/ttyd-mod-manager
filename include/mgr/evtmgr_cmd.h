@@ -2,6 +2,7 @@
 #define _EVT_H_
 
 #include <platform.h>
+#include <placeholder.h>
 
 typedef long Bytecode;
 typedef Bytecode EvtScript[];
@@ -260,7 +261,7 @@ typedef enum EvtOpcode
 #define LOAD_INT_IND(expr1, expr2)      EVT_CMD(EVT_OPC_GETR, expr1, expr2),
 #define LOAD_FLOAT_IND(expr1, expr2)    EVT_CMD(EVT_OPC_GETRF, expr1, expr2),
 
-#define CALL_CPP_SYNC(FUNC, ARGS...)    EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC), ##ARGS),
+#define CALL_CPP_SYNC(FUNC, ...)        EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC) __VA_ARGS_FIX__(__VA_ARGS__)),
 #define CALL_SCRIPT_ASYNC(script)            EVT_CMD(EVT_OPC_RUN_EVT, script),
 #define CALL_SCRIPT_ASYNC_TID(script, expr)  EVT_CMD(EVT_OPC_RUN_EVT_ID, script, expr),
 #define CALL_SCRIPT_SYNC(script)             EVT_CMD(EVT_OPC_RUN_CHILD_EVT, script),
@@ -383,7 +384,7 @@ typedef enum EvtReturnCodes {
   EVT_RETURN_YIELD,
   EVT_RETURN_DONE,
   EVT_RETURN_REPEAT,
-  EVT_RETURN_FINISH = 255,
+  EVT_RETURN_FINISH = 255
 } EvtReturnCodes;
 
 struct EventEntry;

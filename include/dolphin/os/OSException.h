@@ -7,7 +7,7 @@
 
 typedef enum OSException {
     OS_EXCEPTION_FLOATING_POINT = 7,
-    OS_EXCEPTION_COUNT = 15,
+    OS_EXCEPTION_COUNT = 15
 } OSException;
 
 typedef u8 __OSException;

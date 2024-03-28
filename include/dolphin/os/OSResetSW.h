@@ -23,7 +23,7 @@ typedef enum {
     OSRESETSW_ENUM1_UNK3,
     OSRESETSW_ENUM1_UNK4,
     OSRESETSW_ENUM1_UNK5,
-    OSRESETSW_ENUM1_UNK6,
+    OSRESETSW_ENUM1_UNK6
 } OSResetSW_Enum1;
 
 typedef struct _OSResetSW_Unk1 {

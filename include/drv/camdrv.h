@@ -26,7 +26,7 @@ typedef enum CameraId {
 	CAMERA_DEBUG_3D
 } CameraId;
 
-typedef struct CameraEntry {
+struct CameraEntry {
 	u16 flags; //0x0
 	u16 mode; //0x2
 	u16 field_0x4; //0x4
@@ -66,7 +66,7 @@ typedef struct CameraEntry {
 	Vec field_0x23C; //0x23C
 	Vec field_0x248; //0x248
 	char name[0xC]; //0x254
-} CameraEntry;
+};
 
 //u32 test = sizeof(cameraObj); //0x260/608
 

@@ -71,6 +71,35 @@ OSPanic(__FILE__, __LINE__, "Function is not implemented!")
 #define UNUSED
 #endif
 #endif
+#define UNUSED_PARAM(x) ((void)x)
+
+// For if we want to convert a var-arg and append to some function-like call
+#if defined(__clang__) || defined(__GNUC__)
+#define __VA_ARGS_FIX__(...) __VA_OPT__(,) __VA_ARGS__
+#elif defined(__MWERKS__)
+// mwcc *annoyingly* requires all var-arg macros to have a trailing comma if you
+// want to pass a no-arg version, which is obviously trouble if we don't want
+// that comma for further calls. We fix that by emulating a __VA_OPT__ of sorts
+// but it's nasty because we have to do a lot of C macro voodoo
+//
+// See: http://jhnet.co.uk/articles/cpp_magic
+#define __FIRST(a, ...) a
+#define __SECOND(a, b, ...) b
+#define __IS_PROBE(...) __SECOND(__VA_ARGS__, 0,)
+#define __PROBE() ~, 1
+#define __CAT(a, b) a ## b
+#define __CAT2(a, b) __CAT(a, b)
+#define __NOT(x) __IS_PROBE(__CAT(__NOT_, x))
+#define __NOT_0 __PROBE()
+#define __BOOL__(a) __NOT(__NOT(a))
+
+#define __IS_EMPTY_HELPER() 0
+#define __IS_FIRST_EMPTY__(a, ...) __NOT(__BOOL__(__FIRST(__IS_EMPTY_HELPER a (),)))
+
+#define __VA_ARGS_FIX__(...) __CAT2(__VA_ARGS_FIX__, __IS_FIRST_EMPTY__(__VA_ARGS__,)) __VA_ARGS__
+#define __VA_ARGS_FIX__0 ,
+#define __VA_ARGS_FIX__1
+#endif
 
 #define PAD_STACK(bytes)                                                      \
     do {                                                                      \

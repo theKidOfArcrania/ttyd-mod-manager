@@ -27,7 +27,7 @@ typedef u8 GXBool;
 #define GX_VIEWPORT_SZ 6
 #define GX_PROJECTION_SZ 7
 
-#pragma enumalwaysint off
+#pragma enumsalwaysint off
 typedef enum _GXCullMode {
 	GX_CULL_NONE,
 	GX_CULL_FRONT,
@@ -35,7 +35,7 @@ typedef enum _GXCullMode {
 	GX_CULL_ALL
 
 } GXCullMode;
-#pragma enumalwaysint reset
+#pragma enumsalwaysint reset
 
 // TODO: Placeholder
 typedef u32 _GXVtxAttrFmtList;
@@ -96,21 +96,21 @@ typedef enum _GXAttrType {
 typedef enum _GXAnisotropy {
 	GX_ANISO_1,
 	GX_ANISO_2,
-	GX_ANISO_4,
+	GX_ANISO_4
 } GXAnisotropy;
 
 // GXIndTex enums from OpenRVL
 
 typedef enum _GXIndTexAlphaSel {
-	GX_IND_TEX_ALPHA_SEL_0,
+	GX_IND_TEX_ALPHA_SEL_0
 } GXIndTexAlphaSel;
 
 typedef enum _GXIndTexBiasSel {
-	GX_IND_TEX_BIAS_SEL_0,
+	GX_IND_TEX_BIAS_SEL_0
 } GXIndTexBiasSel;
 
 typedef enum _GXIndTexFormat {
-	GX_IND_TEX_FMT_0,
+	GX_IND_TEX_FMT_0
 } GXIndTexFormat;
 
 typedef enum _GXIndTexMtxID {
@@ -125,11 +125,11 @@ typedef enum _GXIndTexMtxID {
 	GX_IND_TEX_MTX_ID_8,
 	GX_IND_TEX_MTX_ID_9,
 	GX_IND_TEX_MTX_ID_10,
-	GX_IND_TEX_MTX_ID_11,
+	GX_IND_TEX_MTX_ID_11
 } GXIndTexMtxID;
 
 typedef enum _GXIndTexScale {
-	GX_IND_TEX_SCALE_0,
+	GX_IND_TEX_SCALE_0
 } GXIndTexScale;
 
 typedef enum _GXIndTexStageID {
@@ -140,7 +140,7 @@ typedef enum _GXIndTexStageID {
 } GXIndTexStageID;
 
 typedef enum _GXIndTexWrap {
-	GX_IND_TEX_WRAP_0,
+	GX_IND_TEX_WRAP_0
 } GXIndTexWrap;
 
 typedef enum _GXTexOffset {
@@ -150,7 +150,7 @@ typedef enum _GXTexOffset {
 	GX_TO_FOURTH,
 	GX_TO_HALF,
 	GX_TO_ONE,
-	GX_MAX_TEXOFFSET,
+	GX_MAX_TEXOFFSET
 } GXTexOffset;
 
 /*
@@ -195,7 +195,7 @@ typedef enum _GXTexFmt {
 typedef enum _GXTexWrapMode {
 	GX_CLAMP,
 	GX_REPEAT,
-	GX_MIRROR,
+	GX_MIRROR
 } GXTexWrapMode;
 
 typedef enum _GXTexFilter { GX_NEAR, GX_LINEAR, GX_NEAR_MIP_NEAR, GX_LIN_MIP_NEAR, GX_NEAR_MIP_LIN, GX_LIN_MIP_LIN } GXTexFilter;
@@ -223,7 +223,7 @@ typedef enum _GXTevOp {
 	GX_TEV_COMP_BGR24_GT,
 	GX_TEV_COMP_BGR24_EQ,
 	GX_TEV_COMP_RGB8_GT,
-	GX_TEV_COMP_RGB8_EQ,
+	GX_TEV_COMP_RGB8_EQ
 } GXTevOp;
 
 typedef enum _GXTevBias { GX_TB_ZERO, GX_TB_ADDHALF, GX_TB_SUBHALF } GXTevBias;
@@ -234,7 +234,7 @@ typedef enum _GXTevSwapSel {
 	GX_TEV_SWAP0,
 	GX_TEV_SWAP1,
 	GX_TEV_SWAP2,
-	GX_TEV_SWAP3,
+	GX_TEV_SWAP3
 } GXTevSwapSel;
 
 typedef enum _GXTevAlphaArg {
@@ -245,14 +245,14 @@ typedef enum _GXTevAlphaArg {
 	GX_CA_TEXA,
 	GX_CA_RASA,
 	GX_KONST,
-	GX_ZERO,
+	GX_ZERO
 } GXTevAlphaArg;
 
 typedef enum _GXTevKColorID {
 	GX_KCOLOR0,
 	GX_KCOLOR1,
 	GX_KCOLOR2,
-	GX_KCOLOR3,
+	GX_KCOLOR3
 } GXTevKColorID;
 
 typedef enum _GXTevKColorSel {
@@ -283,7 +283,7 @@ typedef enum _GXTevKColorSel {
 	GX_TEV_KCSEL_4_8,
 	GX_TEV_KCSEL_3_8,
 	GX_TEV_KCSEL_2_8,
-	GX_TEV_KCSEL_1_8,
+	GX_TEV_KCSEL_1_8
 } GXTevKColorSel;
 
 typedef enum _GXTevColorArg {
@@ -302,7 +302,7 @@ typedef enum _GXTevColorArg {
 	GX_CC_ONE,
 	GX_CC_HALF,
 	GX_CC_KONST,
-	GX_CC_ZERO,
+	GX_CC_ZERO
 } GXTevColorArg;
 
 typedef enum _GXTevStageID {
@@ -321,7 +321,7 @@ typedef enum _GXTevStageID {
 	GX_TEVSTAGE12,
 	GX_TEVSTAGE13,
 	GX_TEVSTAGE14,
-	GX_TEVSTAGE15,
+	GX_TEVSTAGE15
 } GXTevStageID;
 
 typedef enum _GXTevRegID { GX_TEVPREV = 0, GX_TEVREG0, GX_TEVREG1, GX_TEVREG2, GX_MAX_TEVREG } GXTevRegID;
@@ -331,7 +331,7 @@ typedef enum _GXTevMode {
 	GX_DECAL,
 	GX_BLEND,
 	GX_REPLACE,
-	GX_PASSCLR,
+	GX_PASSCLR
 } GXTevMode;
 
 typedef enum _GXTexGenType {
@@ -345,7 +345,7 @@ typedef enum _GXTexGenType {
 	GX_TG_BUMP5,
 	GX_TG_BUMP6,
 	GX_TG_BUMP7,
-	GX_TG_SRTG,
+	GX_TG_SRTG
 } GXTexGenType;
 
 typedef enum _GXTexGenSrc {
@@ -369,7 +369,7 @@ typedef enum _GXTexGenSrc {
 	GX_TG_TEXCOORD5,
 	GX_TG_TEXCOORD6,
 	GX_TG_COLOR0,
-	GX_TG_COLOR1,
+	GX_TG_COLOR1
 } GXTexGenSrc;
 
 // Texture map name.
@@ -412,12 +412,12 @@ typedef enum _GXChannelID {
 	GX_COLOR_ZERO,
 	GX_ALPHA_BUMP,
 	GX_ALPHA_BUMPN,
-	GX_COLOR_NULL = 0xFF,
+	GX_COLOR_NULL = 0xFF
 } GXChannelID;
 
 typedef enum _GXColorSrc {
 	GX_SRC_REG,
-	GX_SRC_VTX,
+	GX_SRC_VTX
 } GXColorSrc;
 
 typedef enum _GXLightID {
@@ -430,19 +430,19 @@ typedef enum _GXLightID {
 	GX_LIGHT5     = 1 << 5,
 	GX_LIGHT6     = 1 << 6,
 	GX_LIGHT7     = 1 << 7,
-	GX_MAX_LIGHT  = 1 << 8,
+	GX_MAX_LIGHT  = 1 << 8
 } GXLightID;
 
 typedef enum _GXDiffuseFn {
 	GX_DF_NONE,
 	GX_DF_SIGN,
-	GX_DF_CLAMP,
+	GX_DF_CLAMP
 } GXDiffuseFn;
 
 typedef enum _GXAttnFn {
 	GX_AF_SPEC,
 	GX_AF_SPOT,
-	GX_AF_NONE,
+	GX_AF_NONE
 } GXAttnFn;
 
 // Number of components in an attribute.
@@ -547,7 +547,7 @@ typedef enum _SDK_GXBlendFactor {
 	GX_BL_SRCALPHA,                    // Source alpha
 	GX_BL_INVSRCALPHA,                 // 1.0 - (Source alpha)
 	GX_BL_DSTALPHA,                    // Frame buffer alpha
-	GX_BL_INVDSTALPHA,                 // 1.0 - (Frame buffer alpha)
+	GX_BL_INVDSTALPHA                  // 1.0 - (Frame buffer alpha)
 } GXBlendFactor;
 
 // Logical operation types.
