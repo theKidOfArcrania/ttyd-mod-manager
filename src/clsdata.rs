@@ -583,6 +583,29 @@ macro_rules! mk_clsdata {
     }
 }
 
+#[derive(Debug, CTypeable, CRead, CDump, Size, ConstSize)]
+#[cread(ptr = sym::SymAddr)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
+#[repr(C)]
+pub struct KusaData {
+    has_more: u32,
+    kusa_hit_obj: ConstPtr<str>,
+    kusa: ConstPtr<str>,
+    callback: Ptr<evt::Script>,
+}
+
+#[derive(Debug, CTypeable, CRead, CDump, Size, ConstSize)]
+#[cread(ptr = sym::SymAddr)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
+#[repr(C)]
+pub struct TreeData {
+    has_more: u32,
+    ki_hit_obj: ConstPtr<str>,
+    miki: ConstPtr<str>, // Tree trunk?
+    ha_temae: ConstPtr<str>, // Leaves in front
+    ha_usiro: ConstPtr<str>, // Leaves in the back
+    callback: Ptr<evt::Script>,
+}
 
 mk_clsdata! {
     AudienceItemWeight: AudienceItemWeightArr !stub,
@@ -606,10 +629,12 @@ mk_clsdata! {
     CookingRecipe: CookingRecipeArr !stub,
     ItemData: ItemDataArr !stub,
     ItemDropData: ItemDropDataArr !stub,
+    KusaData: KusaDataArr,
     NpcAiTypeTable: NpcAiTypeTableArr !stub,
     NpcSetupInfo: NpcSetupInfoArr,
     PointDropData: PointDropDataArr !stub,
     ShopItemTable: ShopItemTableArr !stub,
     ShopSellPriceList: ShopSellPriceListArr !stub,
     StatusVulnerability: StatusVulnerabilityArr !stub,
+    TreeData: TreeDataArr,
 }
