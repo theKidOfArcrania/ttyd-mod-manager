@@ -7,7 +7,6 @@
 #include <mario/mariost.h>
 #include <mgr/evtmgr_cmd.h>
 
-typedef struct EventEntry EventEntry;
 typedef EvtReturnCodes (*UserFunction)(EventEntry *evt, BOOL blocked);
 
 typedef struct EventCommand {

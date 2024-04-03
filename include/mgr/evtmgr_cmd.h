@@ -84,7 +84,7 @@ typedef enum EvtOpcode
 /* 0x47 */ EVT_OPC_READF3,
 /* 0x48 */ EVT_OPC_READF4,
 /* 0x49 */ EVT_OPC_READF_N,
-/* 0x4A */ EVT_OPC_CLAMP_INT,
+///* 0x4A */ EVT_OPC_CLAMP_INT,
 /* 0x4B */ EVT_OPC_SET_USER_WRK,
 /* 0x4C */ EVT_OPC_SET_USER_FLG,
 /* 0x4D */ EVT_OPC_ALLOC_USER_WRK,
@@ -199,9 +199,9 @@ typedef enum EvtOpcode
 #define BREAK_SWITCH()                  EVT_OPC_SWITCH_BREAK
 #define END_SWITCH()                    EVT_OPC_END_SWITCH
 
-#define SET(expr1, expr2)               EVT_CMD(2, EVT_OPC_SET, expr1, expr2),
-#define SET_RAW(expr1, expr2)           EVT_CMD(2, EVT_OPC_SETI, expr1, expr2),
-#define SET_FLOAT(expr1, expr2)         EVT_CMD(2, EVT_OPC_SETF, expr1, expr2),
+#define SET(expr1, expr2)               EVT_CMD(EVT_OPC_SET, expr1, expr2),
+#define SET_RAW(expr1, expr2)           EVT_CMD(EVT_OPC_SETI, expr1, expr2),
+#define SET_FLOAT(expr1, expr2)         EVT_CMD(EVT_OPC_SETF, expr1, expr2),
 
 // //int expressions
 #define ADD(expr1, expr2)               EVT_CMD(EVT_OPC_ADD, expr1, expr2),
@@ -261,7 +261,7 @@ typedef enum EvtOpcode
 #define LOAD_INT_IND(expr1, expr2)      EVT_CMD(EVT_OPC_GETR, expr1, expr2),
 #define LOAD_FLOAT_IND(expr1, expr2)    EVT_CMD(EVT_OPC_GETRF, expr1, expr2),
 
-#define CALL_CPP_SYNC(FUNC, ...)        EVT_CMD(EVT_OPC_USER_FUNC, PTR(FUNC) __VA_ARGS_FIX__(__VA_ARGS__)),
+#define CALL_CPP_SYNC(...)              EVT_CMD(EVT_OPC_USER_FUNC, __VA_ARGS__),
 #define CALL_SCRIPT_ASYNC(script)            EVT_CMD(EVT_OPC_RUN_EVT, script),
 #define CALL_SCRIPT_ASYNC_TID(script, expr)  EVT_CMD(EVT_OPC_RUN_EVT_ID, script, expr),
 #define CALL_SCRIPT_SYNC(script)             EVT_CMD(EVT_OPC_RUN_CHILD_EVT, script),
@@ -387,7 +387,7 @@ typedef enum EvtReturnCodes {
   EVT_RETURN_FINISH = 255
 } EvtReturnCodes;
 
-struct EventEntry;
+typedef struct EventEntry EventEntry;
 s32 evtmgrCmd(struct EventEntry* entry);
 s32 evtGetValue(struct EventEntry* entry, s32 index);
 s32 evtGetNumber(struct EventEntry* entry, s32 index);
