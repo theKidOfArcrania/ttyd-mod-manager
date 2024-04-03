@@ -3,6 +3,7 @@
 #![feature(lazy_cell)]
 #![feature(generic_const_exprs)]
 #![feature(error_generic_member_access)]
+#![feature(strict_overflow_ops)]
 #![allow(incomplete_features)]
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap}, fs::{self, File}, io::Write, path::{Path, PathBuf}
@@ -67,6 +68,20 @@ enum Command {
         #[command(subcommand)]
         cmd: RelCommands,
     },
+    /// Make a rel file from an input elf binary
+    MakeRel {
+        /// Output REL file
+        #[arg(short = 'o', long)]
+        output: String,
+        /// The symbol database to extract information from
+        #[arg(long)]
+        symdb: String,
+        /// The id used for this REL file.
+        #[arg(long)]
+        id: Option<u32>,
+        /// Input ELF binary
+        input: String,
+    }
 }
 
 #[derive(Subcommand)]
@@ -340,6 +355,7 @@ fn main() -> Result<(), anyhow::Error> {
     let env = Env::new(&cli)?;
 
     let mut area_map = HashMap::new();
+    let mut area_map_names = HashMap::new();
     if cli.load_base_info {
         for file in env.base_dir.join("P-G8ME/files/rel/").read_dir()? {
             let file = file?;
@@ -351,7 +367,13 @@ fn main() -> Result<(), anyhow::Error> {
             let data = fs::read(file.path())?;
             let rel = rel::RelFile::new(&data);
             let id = rel.header().id.get();
-            area_map.insert(name[..name.len() - 4].to_string(), id);
+            let base = &name[..name.len() - 4];
+            area_map.insert(base.to_string(), id);
+            if let Some(conflict_name) = area_map_names
+                .insert(id, base.to_string())
+            {
+                eprintln!("WARNING: {base} conflicts with {conflict_name} on id {id}");
+            }
         }
     }
 
@@ -372,6 +394,35 @@ fn main() -> Result<(), anyhow::Error> {
                     Ok(())
                 }
             }
+        }
+        Command::MakeRel { output, symdb, input, id } => {
+            let file_parts = output
+                .rsplitn(2, '/')
+                .next()
+                .expect("should be at least one part")
+                .split_once(".");
+            let area_name = match file_parts {
+                Some((name, "rel")) => name,
+                _ => {
+                    println!("Unable to extract area name from file!");
+                    "aaa"
+                }
+            };
+            let symdb = sym::SymbolDatabase::new(
+                area_map.clone(),
+                sym::RawSymtab::from_reader(File::open(symdb)?)?,
+            );
+            let id = id.or_else(|| area_map.get(area_name).copied())
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Unable to retrieve id for {area_name}. Maybe try \
+                    specifying it explicitly?"
+                ))?;
+
+            let elfdata = fs::read(input)?;
+            let rel = rel::RelFile::from_elf(id, &elfdata, &symdb)?;
+
+            fs::write(output, rel.as_bytes())?;
+            Ok(())
         }
         Command::Rel { file, cmd } => {
             let file_parts = file

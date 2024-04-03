@@ -1,12 +1,11 @@
 use std::{
-    collections::{btree_map as tm, hash_map as hm, BTreeMap, HashMap},
-    mem::size_of,
+    borrow::Cow, collections::{btree_map as tm, hash_map as hm, BTreeMap, HashMap}, iter::once, mem::size_of, num::TryFromIntError
 };
 
 use bytemuck::{Pod, Zeroable};
 use error::mk_err_wrapper;
 use num::FromPrimitive;
-use object::{build::elf as belf, elf::{self, SHN_UNDEF}, Endianness};
+use object::{build::elf as belf, elf::{self, SHN_UNDEF}, Endianness, Object, ObjectSection, ObjectSymbol};
 
 
 use crate::{sym, utils::SaneSize};
@@ -30,11 +29,41 @@ pub enum ErrorType {
     UnaddressableSymbol(SectionAddr),
     #[error("Unable to find symbol `{0:?}` in symbol database")]
     SymbolNotFound(sym::SymAddr),
+    #[error("Unable to find symbol `{0:?}` in symbol database")]
+    SymbolNameNotFound(String),
+    #[error("Symbol `{0}` is not located in this unit but should exist here (or is not public)")]
+    UnknownSymbol(String),
     #[error("Unable to build elf: {0}")]
     BuildElfError(object::build::Error),
+    #[error("Unexpected architecture: {0:?}")]
+    BadArchitecture(object::Architecture),
+    #[error("Unable to parse elf: {0}")]
+    ParseElfError(object::Error),
+    #[error("Expected to be big endian")]
+    BadEndianess,
+    #[error("Cannot have multiple bss sections for an elf to rel file")]
+    MultipleBssSections,
+    #[error("Unsupported relocation target: {0:?}")]
+    UnsupportedRelocationTarget(object::RelocationTarget),
+    #[error("Integer conversion error")]
+    IntConversion,
+    #[error("Bad relocation entry type: {0}")]
+    BadRelocationType(u32),
 }
 
 mk_err_wrapper! { ErrorType }
+
+impl From<object::Error> for Error {
+    fn from(value: object::Error) -> Self {
+        error!(ParseElfError(value))
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(_: TryFromIntError) -> Self {
+        error!(IntConversion)
+    }
+}
 
 macro_rules! mk_be_int {
     ($($name:ident: $ty:ty),* $(,)?) => {
@@ -286,15 +315,294 @@ impl std::fmt::Debug for RelocEntry {
     }
 }
 
+pub const PERMITTED_SECTIONS: [&str; 7] =
+    [".init", ".text", ".ctors", ".dtors", ".rodata", ".data", ".bss"];
+
+pub const EXEC_SECTIONS: [&str; 2] =
+    [".init", ".text"];
+
+pub fn is_permitted_section(section: &object::Section) -> bool {
+    matches!(section.name(), Ok(name) if PERMITTED_SECTIONS.contains(&name))
+}
+
+pub fn is_exec_section(section: &object::Section) -> bool {
+    matches!(section.name(), Ok(name) if EXEC_SECTIONS.contains(&name))
+}
+
+struct RawRelocEntry {
+    offset: u32,
+    type_: u8,
+    section: u8,
+    addend: u32,
+}
+
 pub struct RelFile<'b> {
-    data: &'b [u8],
+    data: Cow<'b, [u8]>,
     header: RelHeader,
     sections: Vec<SectionHeader>,
     imp: Vec<ImpEntry>,
-    relocs: HashMap<u32, Vec<RelocEntry>>,
+    relocs: BTreeMap<u32, Vec<RelocEntry>>,
 }
 
 impl<'b> RelFile<'b> {
+    pub fn from_elf(
+        id: u32,
+        module: &[u8],
+        symdb: &sym::SymbolDatabase,
+    ) -> Res<Self> {
+        let elf = object::File::parse(module)?;
+        match elf.architecture() {
+            object::Architecture::PowerPc => {}
+            arch => bail!(ErrorType::BadArchitecture(arch)),
+        }
+        if elf.endianness() != Endianness::Big {
+            bail!(ErrorType::BadEndianess);
+        }
+
+        fn find_symbol(file: &object::File, sym_name: &str) -> Res<SectionAddr> {
+            let sym = file.symbol_by_name(sym_name)
+                .ok_or_else(|| error!(SymbolNameNotFound(sym_name.to_string())))?;
+            let index = sym.section_index()
+                .ok_or_else(|| error!(UnknownSymbol(sym_name.to_string())))?
+                .0
+                .try_into()?;
+            Ok(SectionAddr::new(index, sym.address().try_into()?))
+        }
+
+        let prolog_addr = find_symbol(&elf, "_prolog")?;
+        let epilog_addr = find_symbol(&elf, "_epilog")?;
+        let unresolved_addr = find_symbol(&elf, "_unresolved")?;
+        let mut bss_size = 0;
+
+        // Create all the main sections
+        let mut section_data = Vec::new();
+        let mut sections = Vec::new();
+        let section_offset = u32::try_from(size_of::<RelHeader>() +
+            elf.sections().count() * size_of::<SectionHeader>())?;
+        for section in elf.sections() {
+            if !is_permitted_section(&section) {
+                sections.push(SectionHeader::default());
+                continue;
+            }
+
+            // TODO: check that bss sections are null length
+            let data = section.data()?;
+            let is_bss = section.kind().is_bss();
+            let length = BigU32::new(if is_bss {
+                assert_eq!(data.len(), 0);
+                let size = u32::try_from(section.size())?;
+                bss_size += size;
+                size
+            } else {
+                data.len().try_into()?
+            });
+            if section_data.len() & 1 == 1 {
+                section_data.push(0);
+            }
+            let hdr = SectionHeader {
+                offset: BigU32::new(if is_bss {
+                    0
+                } else {
+                    (section_offset + u32::try_from(section_data.len())?) |
+                    if is_exec_section(&section) {
+                        1
+                    } else {
+                        0
+                    }
+                }),
+                length,
+            };
+            sections.push(hdr);
+            section_data.extend_from_slice(data);
+            while section_data.len() & 7 != 0 {
+                section_data.push(0);
+            }
+        }
+
+        // Gather all the raw relocation entries
+        let mut raw_relocs = BTreeMap::new();
+        for section in elf.sections() {
+            if !is_permitted_section(&section) {
+                // Don't need to ask to do relocations for sections we aren't
+                // actually even including in the final binary
+                continue;
+            }
+            for (addr, reloc) in section.relocations() {
+                let kind = match reloc.flags() {
+                    object::RelocationFlags::Elf { r_type } => match r_type {
+                        elf::R_PPC_ADDR32
+                        | elf::R_PPC_UADDR32 => ppcdis::RelocType::PPCAddr32,
+                        elf::R_PPC_ADDR16_LO => ppcdis::RelocType::PPCAddr16Lo,
+                        elf::R_PPC_ADDR16_HI => ppcdis::RelocType::PPCAddr16Hi,
+                        elf::R_PPC_ADDR16_HA => ppcdis::RelocType::PPCAddr16Ha,
+                        elf::R_PPC_ADDR24 => ppcdis::RelocType::PPCAddr24,
+                        elf::R_PPC_ADDR14 => ppcdis::RelocType::PPCAddr14,
+                        elf::R_PPC_ADDR14_BRTAKEN => ppcdis::RelocType::PPCAddr14BrTaken,
+                        elf::R_PPC_ADDR14_BRNTAKEN =>
+                            ppcdis::RelocType::PPCAddr14BrNotTaken,
+                        elf::R_PPC_REL24 => ppcdis::RelocType::PPCRel24,
+                        elf::R_PPC_REL14 => ppcdis::RelocType::PPCRel14,
+                        elf::R_PPC_REL14_BRTAKEN =>
+                            ppcdis::RelocType::PPCRel14BrTaken,
+                        elf::R_PPC_REL14_BRNTAKEN =>
+                            ppcdis::RelocType::PPCRel14BrNotTaken,
+                        _ => bail!(BadRelocationType(r_type))
+                    }
+                    _ => bail!(ComplexRelocation)
+                };
+
+                let addend = i32::try_from(reloc.addend())?;
+                let (target_id, target_sect, target_off) = match reloc.target() {
+                    object::RelocationTarget::Symbol(sid) => {
+                        let sym = elf.symbol_by_index(sid)?;
+                        if sym.is_undefined() {
+                            let name = sym.name()?;
+                            let addr = symdb.get_addr(name)
+                                .ok_or_else(|| {
+                                    error!(SymbolNameNotFound(name.to_string()))
+                                })?;
+                            match addr {
+                                sym::SymAddr::Dol(abs) => {
+                                    // TODO: get section in Dol
+                                    (0, 0, abs.strict_add_signed(addend))
+                                }
+                                sym::SymAddr::Rel(file, saddr) => {
+                                    if file == id {
+                                        bail!(UnknownSymbol(sym.name()?.to_string()));
+                                    }
+                                    (file, saddr.sect, saddr.offset)
+                                }
+                            }
+                        } else {
+                            (
+                                id,
+                                sym.section_index()
+                                    .expect("should be defined")
+                                    .0
+                                    .try_into()?,
+                                u32::try_from(sym.address())?
+                                    .strict_add_signed(addend),
+                            )
+                        }
+                    },
+                    target => bail!(UnsupportedRelocationTarget(target))
+                };
+
+                let our_id = section.index();
+                raw_relocs.entry(target_id)
+                    .or_insert_with(|| BTreeMap::new())
+                    .entry(our_id.0)
+                    .or_insert_with(|| Vec::new())
+                    .push(RawRelocEntry {
+                        offset: addr.try_into()?,
+                        type_: kind as u8,
+                        section: target_sect,
+                        addend: target_off.strict_add_signed(addend)
+                    })
+            }
+        }
+
+        // Convert to the relocation / imp format expected
+        let mut rels_offs = Vec::new();
+        let mut rels = Vec::new();
+        let relocs = raw_relocs.remove(&id).unwrap_or_default();
+        let mut relocs_ret = BTreeMap::new();
+        for (target_file, relocs) in once((id, relocs))
+            .chain(raw_relocs.into_iter())
+        {
+            let from = rels.len();
+            rels_offs.push((target_file, from * size_of::<RelocEntry>()));
+            for (section, mut relocs) in relocs {
+                rels.push(RelocEntry {
+                    offset: BigU16::new(0),
+                    type_: ppcdis::RelocType::RvlSect as u8,
+                    section: section as u8,
+                    addend: BigU32::new(0),
+                });
+                relocs.sort_by_key(|r| r.offset);
+                let mut prev_offset = 0;
+                for reloc in relocs {
+                    while reloc.offset - prev_offset > 0xffff {
+                        rels.push(RelocEntry {
+                            offset: BigU16::new(0xffff),
+                            type_: ppcdis::RelocType::RvlNone as u8,
+                            section: 0,
+                            addend: BigU32::new(0),
+                        });
+                        prev_offset += 0xffff;
+                    }
+                    rels.push(RelocEntry {
+                        offset: BigU16::new((reloc.offset - prev_offset) as u16),
+                        type_: reloc.type_,
+                        section: reloc.section,
+                        addend: BigU32::new(reloc.addend),
+                    });
+                    prev_offset = reloc.offset;
+                }
+            }
+            rels.push(RelocEntry {
+                offset: BigU16::new(0),
+                type_: ppcdis::RelocType::RvlEnd as u8,
+                section: 0,
+                addend: BigU32::new(0),
+            });
+            relocs_ret.insert(target_file, rels[from..].to_vec());
+        }
+
+        // Create the imp directory
+        let imp_offset = section_offset + section_data.len() as u32;
+        let imp_size = rels_offs.len() as u32 * size_of::<ImpEntry>() as u32;
+        let rel_offset = imp_offset + imp_size;
+        let mut imp = Vec::new();
+        for (id, offset) in rels_offs {
+            imp.push(ImpEntry {
+                id: BigU32::new(id),
+                offset: BigU32::new(offset as u32 + rel_offset),
+            })
+        }
+
+        let header = RelHeader {
+            id: BigU32::new(id),
+            next: BigU32::new(0),
+            prev: BigU32::new(0),
+            num_sections: BigU32::new(sections.len().try_into()?),
+            section_info_offset: BigU32::new(size_of::<RelHeader>().try_into()?),
+            name_offset: BigU32::new(0),
+            name_size: BigU32::new(0),
+            version: BigU32::new(3),
+            bss_size: BigU32::new(bss_size),
+            rel_offset: BigU32::new(rel_offset),
+            imp_offset: BigU32::new(imp_offset),
+            imp_size: BigU32::new(imp_size),
+            prolog_section: prolog_addr.sect,
+            epilog_section: epilog_addr.sect,
+            unresolved_section: unresolved_addr.sect,
+            bss_section: 0,
+            prolog: BigU32::new(prolog_addr.offset),
+            epilog: BigU32::new(epilog_addr.offset),
+            unresolved: BigU32::new(unresolved_addr.offset),
+            align: BigU32::new(8),
+            bss_align: BigU32::new(8),
+            fix_size: BigU32::new(rel_offset),
+        };
+
+        let mut data = Vec::with_capacity(
+            rel_offset as usize + rels.len() * size_of::<RelocEntry>()
+        );
+        data.extend_from_slice(bytemuck::bytes_of(&header));
+        data.extend_from_slice(bytemuck::cast_slice(&sections));
+        data.extend_from_slice(&section_data);
+        data.extend_from_slice(bytemuck::cast_slice(&imp));
+        data.extend_from_slice(bytemuck::cast_slice(&rels));
+
+        Ok(Self {
+            data: Cow::Owned(data),
+            header,
+            sections,
+            imp,
+            relocs: relocs_ret,
+        })
+    }
     pub fn to_elf(&self, symdb: &sym::SymbolDatabase) -> Res<Vec<u8>> {
         let our_id = self.header.id.get();
         let mut builder = belf::Builder::new(
@@ -541,6 +849,10 @@ impl<'b> RelFile<'b> {
         builder.write(&mut out).map_err(|e| error!(BuildElfError(e)))?;
         Ok(out)
     }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 enum Size {
@@ -588,13 +900,13 @@ impl<'b> RelFile<'b> {
             Size::Bytes(header.imp_size.get() as usize),
         );
 
-        let mut relocs = HashMap::new();
+        let mut relocs = BTreeMap::new();
         let mut reloc_off = header.rel_offset.get() as usize;
 
         for ent in &imp {
             let tbl = match relocs.entry(ent.id()) {
-                hm::Entry::Occupied(ent) => ent.into_mut(),
-                hm::Entry::Vacant(ent) => ent.insert(Vec::new()),
+                tm::Entry::Occupied(ent) => ent.into_mut(),
+                tm::Entry::Vacant(ent) => ent.insert(Vec::new()),
             };
             loop {
                 let ent: RelocEntry = bytemuck::pod_read_unaligned(
@@ -608,7 +920,7 @@ impl<'b> RelFile<'b> {
             }
         }
         Self {
-            data,
+            data: Cow::Borrowed(data),
             header,
             sections,
             imp,

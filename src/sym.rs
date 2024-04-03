@@ -8,7 +8,7 @@ use std::{
 
 use serde::{de::IntoDeserializer, Deserialize, Serialize};
 
-use crate::{clsdata, rel};
+use crate::{clsdata, gen::JPString, rel};
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -497,7 +497,8 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
         let cast = ctx.pointee_tp().unwrap_or("");
         if let Some((value, accessed)) = ctx.strings.0.get(self) {
             accessed.set(true);
-            write!(f, "{value:?}")
+            // TODO: refactor this out
+            JPString(value.clone()).dump(f, ctx).map_err(|_| fmt::Error)
         } else {
             write!(f, "{cast}{}", ctx.symdb.symbol_name(*self, ctx.is_refs))
         }
