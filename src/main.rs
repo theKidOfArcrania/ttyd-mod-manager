@@ -440,19 +440,19 @@ fn main() -> Result<(), anyhow::Error> {
                         Ok(_) => {}
                         Err(e) => {
                             println!(
-                                "{}: {:?}",
+                                "****FAILED: {}: {:?}",
                                 sym.name,
                                 &dol_file.lookup_section_data(addr)
                                     .unwrap()[..sym.size as usize],
                             );
-                            raw_symtab.write_to(File::create(symdb_file)?)?;
-                            return Err(e.into());
+                            continue;
                         }
                     }
                     sym.value_type = sym::DataType::Simple(sym::SimpleType::Function);
                 }
             }
 
+            raw_symtab.write_to(File::create(symdb_file)?)?;
             Ok(())
         }
         Command::MakeRel { output, symdb, input, id } => {
