@@ -348,7 +348,7 @@ impl<'b> RelFile<'b> {
     pub fn from_elf(
         id: u32,
         module: &[u8],
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> Res<Self> {
         let elf = object::File::parse(module)?;
         match elf.architecture() {
@@ -604,7 +604,7 @@ impl<'b> RelFile<'b> {
         })
     }
 
-    pub fn to_elf(&self, symdb: &sym::SymbolDatabase) -> Res<Vec<u8>> {
+    pub fn to_elf(&self, symdb: &sym::SymbolDatabase<sym::SectionType>) -> Res<Vec<u8>> {
         let our_id = self.header.id.get();
         let mut builder = belf::Builder::new(
             Endianness::Big,

@@ -10,11 +10,12 @@ use serde::{de::IntoDeserializer, Deserialize, Serialize};
 
 use crate::{clsdata, gen::JPString, rel};
 
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SectionType {
     #[serde(alias = ".init")]
     Init,
+    #[default]
     #[serde(alias = ".text")]
     Text,
     #[serde(alias = ".data", alias = ".sdata")]
@@ -55,7 +56,7 @@ impl SectionType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SimpleType {
     PtrArr,
@@ -67,6 +68,8 @@ pub enum SimpleType {
     Evt,
     Function,
     Vec3,
+    #[default]
+    #[serde(rename = "")]
     Unknown,
 }
 
@@ -74,6 +77,12 @@ pub enum SimpleType {
 pub enum DataType {
     Simple(SimpleType),
     Class(clsdata::ClsDataType),
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        Self::Simple(Default::default())
+    }
 }
 
 impl serde::Serialize for DataType {
@@ -109,7 +118,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                 E: serde::de::Error,
             {
                 Ok(match v.chars().next() {
-                    None => DataType::Simple(SimpleType::Unknown),
+                    None => DataType::default(),
                     Some(c) => {
                         let de = v.into_deserializer();
                         if c.is_lowercase() {
@@ -126,12 +135,12 @@ impl<'de> serde::Deserialize<'de> for DataType {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct RawSymEntry {
+pub struct RawSymEntry<T> {
     pub area: String,
     pub sec_id: u8,
     #[serde(with = "serde_u32_hex")]
     pub sec_offset: u32,
-    pub sec_name: SectionType,
+    pub sec_name: T,
     pub sec_type: SectionType,
     #[serde(with = "serde_opt_u32_hex")]
     pub ram_addr: Option<u32>,
@@ -151,7 +160,7 @@ pub struct RawSymEntry {
     pub default_type: bool,
 }
 
-impl RawSymEntry {
+impl<T> RawSymEntry<T> {
     pub fn section_addr(&self) -> rel::SectionAddr {
         rel::SectionAddr::new(self.sec_id, self.sec_offset)
     }
@@ -167,7 +176,7 @@ mod serde_opt_u32_hex {
     {
         serializer.serialize_str(&match val {
             None => "".into(),
-            Some(val) => format!("{val:x}"),
+            Some(val) => format!("{val:08x}"),
         })
     }
 
@@ -213,7 +222,7 @@ mod serde_u32_hex {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{val:x}"))
+        serializer.serialize_str(&format!("{val:08x}"))
     }
 
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
@@ -245,12 +254,12 @@ mod serde_u32_hex {
 }
 
 #[derive(Clone)]
-pub struct RawSymtab {
-    syms: Vec<RawSymEntry>,
+pub struct RawSymtab<T> {
+    syms: Vec<RawSymEntry<T>>,
 }
 
-impl IntoIterator for RawSymtab {
-    type Item = RawSymEntry;
+impl<T> IntoIterator for RawSymtab<T> {
+    type Item = RawSymEntry<T>;
 
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
@@ -259,27 +268,27 @@ impl IntoIterator for RawSymtab {
     }
 }
 
-impl<'a> IntoIterator for &'a RawSymtab {
-    type Item = &'a RawSymEntry;
+impl<'a, T> IntoIterator for &'a RawSymtab<T> {
+    type Item = &'a RawSymEntry<T>;
 
-    type IntoIter = std::slice::Iter<'a, RawSymEntry>;
+    type IntoIter = std::slice::Iter<'a, RawSymEntry<T>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.syms.iter()
     }
 }
 
-impl<'a> IntoIterator for &'a mut RawSymtab {
-    type Item = &'a mut RawSymEntry;
+impl<'a, T> IntoIterator for &'a mut RawSymtab<T> {
+    type Item = &'a mut RawSymEntry<T>;
 
-    type IntoIter = std::slice::IterMut<'a, RawSymEntry>;
+    type IntoIter = std::slice::IterMut<'a, RawSymEntry<T>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.syms.iter_mut()
     }
 }
 
-impl RawSymtab {
+impl<T: Serialize> RawSymtab<T> {
     pub fn write_to<W: io::Write>(&self, writer: W) -> anyhow::Result<()> {
         let mut wtr = csv::WriterBuilder::new()
             .has_headers(true)
@@ -289,7 +298,9 @@ impl RawSymtab {
         }
         Ok(())
     }
+}
 
+impl RawSymtab<String> {
     pub fn from_reader_raw<R: io::Read>(rdr: R) -> anyhow::Result<Self> {
         let mut rdr = csv::Reader::from_reader(rdr);
         let mut syms = Vec::new();
@@ -299,7 +310,9 @@ impl RawSymtab {
         }
         Ok(Self { syms })
     }
+}
 
+impl RawSymtab<SectionType> {
     pub fn from_reader<R: io::Read>(rdr: R) -> anyhow::Result<Self> {
         let mut rdr = csv::Reader::from_reader(rdr);
         let mut syms = Vec::new();
@@ -314,7 +327,8 @@ impl RawSymtab {
         ]);
 
         for record in rdr.records() {
-            let mut ent: RawSymEntry = record?.deserialize(Some(&headers))?;
+            let mut ent: RawSymEntry<SectionType> = record?
+                .deserialize(Some(&headers))?;
 
             // Make sure function entries do not exist in data
             if ent.value_type == DataType::Simple(SimpleType::Unknown) &&
@@ -460,7 +474,7 @@ impl StringsMap {
 #[derive(Clone)]
 pub struct AddrDumpCtx<'a> {
     area: u32,
-    symdb: &'a SymbolDatabase,
+    symdb: &'a SymbolDatabase<SectionType>,
     pointee_tp: Option<String>,
     strings: &'a StringsMap,
     is_refs: bool,
@@ -470,7 +484,7 @@ impl<'a> AddrDumpCtx<'a> {
     pub fn new(
         area: u32,
         var_type: &interop::CType,
-        symdb: &'a SymbolDatabase,
+        symdb: &'a SymbolDatabase<SectionType>,
         strings: &'a StringsMap,
     ) -> Self {
         let pointee_tp = var_type.get_pointee().map(|tp| {
@@ -506,7 +520,7 @@ impl<'a> AddrDumpCtx<'a> {
         self.pointee_tp.as_ref().map(AsRef::as_ref)
     }
 
-    pub fn symdb(&self) -> &SymbolDatabase {
+    pub fn symdb(&self) -> &SymbolDatabase<SectionType> {
         self.symdb
     }
 
@@ -539,19 +553,19 @@ impl<'a> interop::CDump<AddrDumpCtx<'a>> for SymAddr {
 }
 
 #[derive(Default, Clone)]
-pub struct SymbolDatabase {
+pub struct SymbolDatabase<T> {
     primary_name: HashMap<SymAddr, String>,
     addr_names: HashMap<SymAddr, Vec<String>>,
     syms: HashMap<String, SymAddr>,
-    raw_ent: BTreeMap<SymAddr, RawSymEntry>,
+    raw_ent: BTreeMap<SymAddr, RawSymEntry<T>>,
     by_area: HashMap<u32, BTreeSet<rel::SectionAddr>>,
     dol_addrs: BTreeSet<u32>,
     area_map: HashMap<String, u32>,
     null: BTreeSet<rel::SectionAddr>,
 }
 
-impl SymbolDatabase {
-    pub fn new(area_map: HashMap<String, u32>, raw: RawSymtab) -> Self {
+impl<T: Clone + Default> SymbolDatabase<T> {
+    pub fn new(area_map: HashMap<String, u32>, raw: RawSymtab<T>) -> Self {
         // TODO: return error
         let mut ret = Self::default();
         for sym in raw.syms {
@@ -578,39 +592,11 @@ impl SymbolDatabase {
         ret
     }
 
-    pub fn add_symbol(
-        &mut self,
-        addr: SymAddr,
-        name: String,
-        entry: Option<RawSymEntry>,
-    ) {
-        self.primary_name.insert(addr, name.clone());
-        self.addr_names
-            .entry(addr)
-            .or_insert_with(Vec::new)
-            .push(name.clone());
-        self.syms.insert(name, addr);
-        match addr {
-            SymAddr::Dol(abs) => {
-                self.dol_addrs.insert(abs);
-            }
-            SymAddr::Rel(area, saddr) => {
-                self.by_area
-                    .entry(area)
-                    .or_insert_with(BTreeSet::new)
-                    .insert(saddr);
-            }
-        }
-        if let Some(ent) = entry {
-            self.raw_ent.insert(addr, ent);
-        }
-    }
-
-    pub fn get(&self, addr: SymAddr) -> Option<RawSymEntry> {
+    pub fn get(&self, addr: SymAddr) -> Option<RawSymEntry<T>> {
         self.raw_ent.get(&addr).map(Clone::clone)
     }
 
-    pub fn get_near(&self, addr: SymAddr) -> Option<(RawSymEntry, i32)> {
+    pub fn get_near(&self, addr: SymAddr) -> Option<(RawSymEntry<T>, i32)> {
         fn relativize(a: SymAddr, b: SymAddr) -> Option<i32>{
             match (a, b) {
                 (SymAddr::Dol(a), SymAddr::Dol(b)) => Some(b as i32 - a as i32),
@@ -637,6 +623,37 @@ impl SymbolDatabase {
         Some((ent.clone(), relativize(*base, addr)?))
     }
 
+}
+
+impl<T> SymbolDatabase<T> {
+    pub fn add_symbol(
+        &mut self,
+        addr: SymAddr,
+        name: String,
+        entry: Option<RawSymEntry<T>>,
+    ) {
+        self.primary_name.insert(addr, name.clone());
+        self.addr_names
+            .entry(addr)
+            .or_insert_with(Vec::new)
+            .push(name.clone());
+        self.syms.insert(name, addr);
+        match addr {
+            SymAddr::Dol(abs) => {
+                self.dol_addrs.insert(abs);
+            }
+            SymAddr::Rel(area, saddr) => {
+                self.by_area
+                    .entry(area)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(saddr);
+            }
+        }
+        if let Some(ent) = entry {
+            self.raw_ent.insert(addr, ent);
+        }
+    }
+
     pub fn name_of(&self, addr: SymAddr) -> Option<&str> {
         self.primary_name.get(&addr).map(String::as_str)
     }
@@ -657,7 +674,7 @@ impl SymbolDatabase {
         self.syms.get(name).map(|v| *v)
     }
 
-    pub fn dol_iter(&self) -> impl Iterator<Item = &RawSymEntry> {
+    pub fn dol_iter(&self) -> impl Iterator<Item = &RawSymEntry<T>> {
         self.dol_addrs
             .iter()
             .filter_map(|a| self.raw_ent.get(&SymAddr::Dol(*a)))
@@ -666,7 +683,7 @@ impl SymbolDatabase {
     pub fn rel_iter<'e>(
         &'e self,
         area: u32,
-    ) -> impl Iterator<Item = &'e RawSymEntry> {
+    ) -> impl Iterator<Item = &'e RawSymEntry<T>> {
         self.by_area
             .get(&area)
             .unwrap_or(&self.null)

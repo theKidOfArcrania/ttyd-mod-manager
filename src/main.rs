@@ -407,33 +407,49 @@ fn main() -> Result<(), anyhow::Error> {
         }
         Command::FixSymbols { symdb: symdb_file } => {
             let mut raw_symtab = sym::RawSymtab::from_reader_raw(
-                File::open(symdb_file)?
+                File::open(&symdb_file)?
+            )?;
+
+            let mut parsed_symtab = sym::RawSymtab::from_reader(
+                File::open(&symdb_file)?
             )?;
             let symdb = sym::SymbolDatabase::new(
                 area_map.clone(),
-                raw_symtab.clone(),
+                parsed_symtab.clone(),
             );
 
             let dol_path = env.base_dir().join("P-G8ME/sys/main.dol");
             let dol_file = dol::DolFile::from_reader(File::open(dol_path)?)?;
             for sym in &mut raw_symtab {
                 if &sym.area == "_main" {
-                    if !sym.default_type {
+                    if sym.value_type != sym::DataType::default() {
                         continue;
                     }
-                    match gen::Data::read_dol(&dol_file, sym, &symdb) {
+                    if !sym.sec_type.is_exec() {
+                        eprintln!(
+                            "WARNING: {} entry's type is unknown",
+                            sym.name,
+                        );
+                        continue;
+                    }
+                    println!("Converting {}", sym.name);
+                    let addr = sym.ram_addr.unwrap();
+                    let parsed_sym = symdb.get(sym::SymAddr::Dol(addr))
+                        .expect("Should exist");
+                    match gen::Data::read_dol(&dol_file, &parsed_sym, &symdb) {
                         Ok(_) => {}
                         Err(e) => {
                             println!(
                                 "{}: {:?}",
                                 sym.name,
-                                &dol_file.lookup_section_data(
-                                    sym.ram_addr.unwrap()
-                                ).unwrap()[..sym.size as usize],
+                                &dol_file.lookup_section_data(addr)
+                                    .unwrap()[..sym.size as usize],
                             );
+                            raw_symtab.write_to(File::create(symdb_file)?)?;
                             return Err(e.into());
                         }
                     }
+                    sym.value_type = sym::DataType::Simple(sym::SimpleType::Function);
                 }
             }
 

@@ -61,9 +61,9 @@ pub struct DolReader<'r, 'b> {
 }
 
 impl<'r, 'b> DolReader<'r, 'b> {
-    pub fn new(
+    pub fn new<T>(
         file: &'r dol::DolFile<'b>,
-        ent: &sym::RawSymEntry,
+        ent: &sym::RawSymEntry<T>,
     ) -> Self {
         let offset = ent.ram_addr.unwrap_or(0);
         Self {
@@ -146,9 +146,9 @@ impl<'r, 'b> RelocOverlayReader<'r, 'b> {
             bounded: false,
         }
     }
-    pub fn new(
+    pub fn new<T>(
         overlay: &'r rel::RelocOverlay<'b, 'b>,
-        ent: &sym::RawSymEntry,
+        ent: &sym::RawSymEntry<T>,
     ) -> Self {
         let addr = ent.section_addr();
         Self {

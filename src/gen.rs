@@ -27,7 +27,7 @@ mk_err_wrapper! {
 }
 
 impl Error {
-    fn provide_sym(self, sym: &sym::RawSymEntry) -> Self {
+    fn provide_sym<T>(self, sym: &sym::RawSymEntry<T>) -> Self {
         let (bt, e) = self.unwrap();
         let name = sym.name.clone();
         let e = match e {
@@ -239,8 +239,8 @@ pub enum Data {
 impl Data {
     pub fn read_rel(
         overlay: &rel::RelocOverlay,
-        ent: &sym::RawSymEntry,
-        symdb: &sym::SymbolDatabase,
+        ent: &sym::RawSymEntry<sym::SectionType>,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> Res<Self> {
         let mut reader = reader::Reader(reader::RelocOverlayReader::new(
             overlay,
@@ -256,8 +256,8 @@ impl Data {
 
     pub fn read_dol(
         file: &dol::DolFile,
-        ent: &sym::RawSymEntry,
-        symdb: &sym::SymbolDatabase,
+        ent: &sym::RawSymEntry<sym::SectionType>,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> Res<Self> {
         let mut reader = reader::Reader(reader::DolReader::new(
             file,
@@ -271,11 +271,11 @@ impl Data {
         ).map_err(|e| e.provide_sym(ent))
     }
 
-    fn read_no_provide<T: reader::SymReader + Clone>(
-        reader: &mut reader::Reader<T>,
+    fn read_no_provide<R: reader::SymReader + Clone>(
+        reader: &mut reader::Reader<R>,
         file_id: u32,
-        ent: &sym::RawSymEntry,
-        symdb: &sym::SymbolDatabase,
+        ent: &sym::RawSymEntry<sym::SectionType>,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> Res<Self> {
         let res = match ent.value_type {
             sym::DataType::Simple(tp) => match tp {
@@ -318,7 +318,7 @@ impl Data {
         &self,
         sec_type: sym::SectionType,
         overlay: &rel::RelocOverlay,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> interop::CType {
         let kind = match self {
             Data::AsmFunc(_) => interop::ctype_kind!([void]),
@@ -388,7 +388,7 @@ impl Data {
         &self,
         sec_type: sym::SectionType,
         overlay: &rel::RelocOverlay,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
         strings: &sym::StringsMap,
     ) -> Res<CodeLine> {
         let vartype = self.get_type(sec_type, overlay, symdb);
@@ -452,8 +452,8 @@ impl interop::Size for Data {
 
 pub fn generate_line(
     overlay: &rel::RelocOverlay,
-    symdb: &sym::SymbolDatabase,
-    ent: &sym::RawSymEntry,
+    symdb: &sym::SymbolDatabase<sym::SectionType>,
+    ent: &sym::RawSymEntry<sym::SectionType>,
     strings: &sym::StringsMap,
 ) -> Res<interop::Definition> {
     let addr = sym::SymAddr::Rel(

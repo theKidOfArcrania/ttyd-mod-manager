@@ -246,7 +246,7 @@ impl Code {
     pub fn find_default_sig(
         &self,
         base_addr: sym::SymAddr,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
     ) -> Option<CCode> {
         for sig in DEFAULT_SIGS {
             if let Some(res) = self.match_template(sig, base_addr) {

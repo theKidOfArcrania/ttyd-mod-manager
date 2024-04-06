@@ -624,9 +624,9 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         }
     }
 
-    pub fn add_from_symdb(
+    pub fn add_from_symdb<T>(
         &self,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<T>,
     ) -> reader::Res<()> {
         let mut evt_scripts = self.evt_scripts.borrow_mut();
 
@@ -644,9 +644,9 @@ impl<'r, 'b> EvtParser<'r, 'b> {
         Ok(())
     }
 
-    pub fn search_evt_scripts(
+    pub fn search_evt_scripts<T>(
         &self,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<T>,
     ) -> reader::Res<()> {
         let fn_evt_addr = symdb.get_addr("relSetEvtAddr").ok_or_else(|| {
             reader::Error::new(reader::ErrorType::Custom(
@@ -736,7 +736,7 @@ impl<'r, 'b> EvtParser<'r, 'b> {
 
     pub fn dump_scripts(
         &self,
-        symdb: &sym::SymbolDatabase,
+        symdb: &sym::SymbolDatabase<sym::SectionType>,
         strings: &sym::StringsMap,
     ) {
         let evt_scripts = self.evt_scripts.borrow();
