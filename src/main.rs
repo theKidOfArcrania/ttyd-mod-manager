@@ -7,7 +7,7 @@
 #![feature(const_trait_impl)]
 #![allow(incomplete_features)]
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, hash_map as hm},
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -420,36 +420,71 @@ fn main() -> Result<(), anyhow::Error> {
 
             let dol_path = env.base_dir().join("P-G8ME/sys/main.dol");
             let dol_file = dol::DolFile::from_reader(File::open(dol_path)?)?;
+            let mut rel_files = HashMap::new();
             for sym in &mut raw_symtab {
-                if &sym.area == "_main" {
-                    if sym.value_type != sym::DataType::default() {
+                let saddr = if &sym.area == "_main" {
+                    sym::SymAddr::Dol(sym.ram_addr.unwrap())
+                } else {
+                    if let Some(file_id) = area_map.get(&sym.area) {
+                        sym::SymAddr::Rel(*file_id, sym.section_addr())
+                    } else {
                         continue;
                     }
-                    if !sym.sec_type.is_exec() {
-                        eprintln!(
-                            "WARNING: {} entry's type is unknown",
-                            sym.name,
-                        );
-                        continue;
-                    }
-                    println!("Converting {}", sym.name);
-                    let addr = sym.ram_addr.unwrap();
-                    let parsed_sym = symdb.get(sym::SymAddr::Dol(addr))
-                        .expect("Should exist");
-                    match gen::Data::read_dol(&dol_file, &parsed_sym, &symdb) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!(
-                                "****FAILED: {}: {:?}",
-                                sym.name,
-                                &dol_file.lookup_section_data(addr)
-                                    .unwrap()[..sym.size as usize],
-                            );
-                            continue;
+                };
+                let parsed_sym = symdb.get(saddr).expect("Should exist");
+                if sym.value_type != sym::DataType::default() {
+                    continue;
+                }
+                if !sym.sec_type.is_exec() {
+                    //eprintln!(
+                    //    "WARNING: {} entry's type is unknown",
+                    //    sym.name,
+                    //);
+                    continue;
+                }
+                println!("Converting {}", sym.name);
+                match saddr {
+                    sym::SymAddr::Dol(_) => {
+                        match gen::Data::read_dol(&dol_file, &parsed_sym, &symdb) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let addr = sym.ram_addr.unwrap();
+                                println!(
+                                    "****FAILED: {e}: {}: {:?}",
+                                    sym.name,
+                                    &dol_file.lookup_section_data(addr)
+                                        .unwrap()[..sym.size as usize],
+                                );
+                                continue;
+                            }
                         }
                     }
-                    sym.value_type = sym::DataType::Simple(sym::SimpleType::Function);
+                    sym::SymAddr::Rel(_, _) => {
+                        let foverlay = match rel_files.entry(sym.area.to_string()) {
+                            hm::Entry::Occupied(ent) => ent.into_mut(),
+                            hm::Entry::Vacant(ent) => {
+                                let data = fs::read(env.base_dir().join(format!(
+                                    "P-G8ME/files/rel/{}.rel",
+                                    sym.area,
+                                )))?;
+                                let rel = rel::RelFile::new_owned(data);
+                                ent.insert(rel::RelocFileOverlay::new_from(rel))
+                            }
+                        };
+                        let overlay = foverlay.overlay();
+                        match gen::Data::read_rel(overlay, &parsed_sym, &symdb) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!(
+                                    "****FAILED: {e}: {}: {saddr:?}",
+                                    sym.name,
+                                );
+                                continue;
+                            }
+                        }
+                    }
                 }
+                sym.value_type = sym::DataType::Simple(sym::SimpleType::Function);
             }
 
             raw_symtab.write_to(File::create(symdb_file)?)?;

@@ -886,17 +886,25 @@ fn bytes_to_vec<T: Pod + Copy>(data: &[u8], mut offset: usize, len: Size) -> Vec
 
 impl<'b> RelFile<'b> {
     pub fn new(data: &'b [u8]) -> Self {
+        Self::new_cow(Cow::Borrowed(data))
+    }
+
+    pub fn new_owned(data: Vec<u8>) -> Self {
+        Self::new_cow(Cow::Owned(data))
+    }
+
+    fn new_cow(data: Cow<'b, [u8]>) -> Self {
         let header: RelHeader =
             bytemuck::pod_read_unaligned(&data[0..size_of::<RelHeader>()]);
 
         let sections = bytes_to_vec(
-            data,
+            data.as_ref(),
             header.section_info_offset.get() as usize,
             Size::Length(header.num_sections.get() as usize),
         );
 
         let imp: Vec<ImpEntry> = bytes_to_vec(
-            data,
+            data.as_ref(),
             header.imp_offset.get() as usize,
             Size::Bytes(header.imp_size.get() as usize),
         );
@@ -920,13 +928,7 @@ impl<'b> RelFile<'b> {
                 }
             }
         }
-        Self {
-            data: Cow::Borrowed(data),
-            header,
-            sections,
-            imp,
-            relocs,
-        }
+        Self { data, header, sections, imp, relocs }
     }
 
     pub fn header(&self) -> &RelHeader {
@@ -1060,6 +1062,29 @@ impl<T> Symbol<T> {
 enum SymbolicActions {
     Concrete(ppcdis::RelocAction),
     RelocSymbol(ppcdis::RelocType),
+}
+
+#[ouroboros::self_referencing]
+pub struct RelocFileOverlay {
+    file: RelFile<'static>,
+    #[borrows(file)]
+    #[covariant]
+    overlay: RelocOverlay<'this, 'static>,
+}
+
+impl RelocFileOverlay {
+    pub fn new_from(backing: RelFile<'static>) -> Self {
+        RelocFileOverlayBuilder {
+            file: backing,
+            overlay_builder: |backing| {
+                RelocOverlay::new(backing)
+            },
+        }.build()
+    }
+
+    pub fn overlay(&self) -> &RelocOverlay {
+        self.borrow_overlay()
+    }
 }
 
 pub struct RelocOverlay<'r, 'b> {
