@@ -603,6 +603,7 @@ impl<'b> RelFile<'b> {
             relocs: relocs_ret,
         })
     }
+
     pub fn to_elf(&self, symdb: &sym::SymbolDatabase) -> Res<Vec<u8>> {
         let our_id = self.header.id.get();
         let mut builder = belf::Builder::new(

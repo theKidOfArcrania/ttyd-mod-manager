@@ -632,7 +632,10 @@ impl<'r, 'b> EvtParser<'r, 'b> {
 
         for sym in symdb.rel_iter(self.overlay.backing().header().id.get()) {
             if sym.value_type == sym::DataType::Simple(sym::SimpleType::Evt) {
-                let mut reader = reader::Reader::new(&self.overlay, sym);
+                let mut reader = reader::Reader(reader::RelocOverlayReader::new(
+                    &self.overlay,
+                    sym,
+                ));
                 let script: Script = reader.read_val()?;
                 evt_scripts.insert(sym.section_addr(), script);
             }
@@ -703,7 +706,10 @@ impl<'r, 'b> EvtParser<'r, 'b> {
             }
 
             // Parse this current script.
-            let mut reader = reader::Reader::new_unsized(self.overlay, addr);
+            let mut reader = reader::Reader(reader::RelocOverlayReader::new_unsized(
+                self.overlay,
+                addr,
+            ));
             let script: Script = reader.read_val()?;
 
             // Search for nested event scripts.

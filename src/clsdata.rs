@@ -534,9 +534,9 @@ macro_rules! mk_clsdata {
         )?)*
 
         impl ClsDataType {
-            pub fn read(
+            pub fn read<T: reader::SymReader + Clone>(
                 self,
-                reader: &mut reader::Reader,
+                reader: &mut reader::Reader<T>,
             ) -> Result<ClsData, reader::Error>
             {
                 use interop::CReader;

@@ -16,6 +16,7 @@ extern crate num_derive;
 
 mod code;
 mod clsdata;
+mod dol;
 mod evt;
 mod gen;
 mod msg;
@@ -59,6 +60,11 @@ enum Command {
     Message {
         #[command(subcommand)]
         cmd: Option<MessageCommand>,
+    },
+    /// Fixes symbols
+    FixSymbols {
+        /// The symbol database to work with
+        symdb: String,
     },
     /// Manage rel files
     Rel {
@@ -395,6 +401,21 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
+        Command::FixSymbols { symdb } => {
+            let symdb = sym::SymbolDatabase::new(
+                area_map.clone(),
+                sym::RawSymtab::from_reader(File::open(symdb)?)?,
+            );
+
+            let dol_path = env.base_dir().join("P-G8ME/sys/main.dol");
+            let dol_file = dol::DolFile::from_reader(File::open(dol_path)?)?;
+            for sym in symdb.dol_iter() {
+                println!("{}", sym.name);
+                let data = gen::Data::read_dol(&dol_file, sym, &symdb)?;
+            }
+
+            Ok(())
+        }
         Command::MakeRel { output, symdb, input, id } => {
             let file_parts = output
                 .rsplitn(2, '/')
@@ -488,7 +509,7 @@ fn main() -> Result<(), anyhow::Error> {
                         {
                             strings.insert(
                                 sym::SymAddr::Rel(area_id, ent.section_addr()),
-                                match gen::Data::read(&overlay, ent, &symdb)? {
+                                match gen::Data::read_rel(&overlay, ent, &symdb)? {
                                     gen::Data::String(val) => {
                                         val.0
                                     }

@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use thiserror::Error;
 use interop::CReader;
 
-use crate::{clsdata, code, evt, reader, rel, sym};
+use crate::{clsdata, code, dol, evt, reader, rel, sym};
 
 // Sanity check to ensure that usize is as big (if not bigger) than u32
 const _: () =
@@ -18,6 +18,8 @@ pub enum ErrorType {
     EncodingError(String),
     #[error("{0}: Formatting error")]
     FormattingError(String),
+    #[error("{0}: Expected a concrete RAM address")]
+    NoRamAddr(String),
 }
 
 mk_err_wrapper! {
@@ -32,6 +34,7 @@ impl Error {
             ErrorType::ReaderError(_, e) => ErrorType::ReaderError(name, e),
             ErrorType::EncodingError(_) => ErrorType::EncodingError(name),
             ErrorType::FormattingError(_) => ErrorType::FormattingError(name),
+            ErrorType::NoRamAddr(_) => ErrorType::NoRamAddr(name),
         };
         Self::new_with(bt, e)
     }
@@ -234,21 +237,46 @@ pub enum Data {
 }
 
 impl Data {
-    pub fn read(
+    pub fn read_rel(
         overlay: &rel::RelocOverlay,
         ent: &sym::RawSymEntry,
         symdb: &sym::SymbolDatabase,
     ) -> Res<Self> {
-        Data::read_no_provide(overlay, ent, symdb)
-            .map_err(|e| e.provide_sym(ent))
+        let mut reader = reader::Reader(reader::RelocOverlayReader::new(
+            overlay,
+            ent,
+        ));
+        Data::read_no_provide(
+            &mut reader,
+            overlay.backing().header().id.get(),
+            ent,
+            symdb,
+        ).map_err(|e| e.provide_sym(ent))
     }
 
-    fn read_no_provide(
-        overlay: &rel::RelocOverlay,
+    pub fn read_dol(
+        file: &dol::DolFile,
         ent: &sym::RawSymEntry,
         symdb: &sym::SymbolDatabase,
     ) -> Res<Self> {
-        let mut reader = reader::Reader::new(overlay, ent);
+        let mut reader = reader::Reader(reader::DolReader::new(
+            file,
+            ent,
+        ));
+        Data::read_no_provide(
+            &mut reader,
+            0,
+            ent,
+            symdb,
+        ).map_err(|e| e.provide_sym(ent))
+    }
+
+    fn read_no_provide<T: reader::SymReader + Clone>(
+        reader: &mut reader::Reader<T>,
+        file_id: u32,
+        ent: &sym::RawSymEntry,
+        symdb: &sym::SymbolDatabase,
+    ) -> Res<Self> {
         let res = match ent.value_type {
             sym::DataType::Simple(tp) => match tp {
                 sym::SimpleType::PtrArr => {
@@ -266,10 +294,13 @@ impl Data {
                 | sym::SimpleType::Unknown => Data::Zero(reader.read_val_full()?),
                 sym::SimpleType::Evt => Data::Evt(reader.read_val_full()?),
                 sym::SimpleType::Function => {
-                    let base_addr = sym::SymAddr::Rel(
-                        overlay.backing().header().id.get(),
-                        ent.section_addr(),
-                    );
+                    let base_addr = if file_id != 0 {
+                        sym::SymAddr::Rel(file_id, ent.section_addr())
+                    } else {
+                        sym::SymAddr::Dol(ent.ram_addr.ok_or_else(|| {
+                            error!(NoRamAddr(String::new()))
+                        })?)
+                    };
                     let asm: code::Code = reader.read_val_full()?;
                     match asm.find_default_sig(base_addr, symdb) {
                         None => Data::AsmFunc(asm),
@@ -278,7 +309,7 @@ impl Data {
                 },
                 sym::SimpleType::Vec3 => Data::Vec3(reader.read_val_full()?),
             },
-            sym::DataType::Class(tp) => Data::Struct(tp.read(&mut reader)?),
+            sym::DataType::Class(tp) => Data::Struct(tp.read(reader)?),
         };
         Ok(res)
     }
@@ -298,7 +329,7 @@ impl Data {
                     let cur_pointee = symdb
                         .get(*addr)
                         .and_then(|sym| {
-                            Some(Data::read(overlay, &sym, symdb).ok()?.get_type(
+                            Some(Data::read_rel(overlay, &sym, symdb).ok()?.get_type(
                                 sym.sec_name,
                                 overlay,
                                 symdb,
@@ -326,7 +357,7 @@ impl Data {
                 let pointee = symdb
                     .get(*addr)
                     .and_then(|sym| {
-                        Some(Data::read(overlay, &sym, symdb).ok()?.get_type(
+                        Some(Data::read_rel(overlay, &sym, symdb).ok()?.get_type(
                             sym.sec_name,
                             overlay,
                             symdb,
@@ -429,7 +460,7 @@ pub fn generate_line(
         overlay.backing().header().id.get(),
         ent.section_addr(),
     );
-    let dat = Data::read(overlay, ent, symdb)?;
+    let dat = Data::read_rel(overlay, ent, symdb)?;
     let code_line = dat.to_code(ent.sec_name, overlay, symdb, strings)
         .map_err(|e| e.provide_sym(ent))?;
     let symbol_name = symdb.symbol_name(addr, false);
