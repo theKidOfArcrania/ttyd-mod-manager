@@ -483,6 +483,7 @@ static INSN_ROOT: InsnClass = {
             (151, X_ent!(stwx     R R R X: X)),
             (181, X_ent!(stdux    R R R X: X)),
             (183, X_ent!(stwux    R R R X: X)),
+            (210, X_ent!(mtsr     R N X X: X !)),
             (214, X_ent!(stdcx    R R R X: X)),
             (215, X_ent!(stbx     R R R X: X)),
             (246, X_ent!(dcbtst   X R R X: X)),
@@ -505,6 +506,7 @@ static INSN_ROOT: InsnClass = {
             (439, X_ent!(sthux    R R R X: X)),
             (444, X_ent!(or       R R R X: Rc !)),
             (467, X_ent!(mtspr    R P X X: X !)),
+            (470, X_ent!(dcbi     X R R X: X)),
             (476, X_ent!(nand     R R R X: Rc !)),
             (512, X_ent!(mcrxr    C X X X: X)),
             (533, X_ent!(lswx     R R R X: X)),
@@ -513,6 +515,7 @@ static INSN_ROOT: InsnClass = {
             (536, X_ent!(srw      R R R X: Rc !)),
             (539, X_ent!(srd      R R R X: Rc !)),
             (567, X_ent!(lfsux    F R R X: X)),
+            (595, X_ent!(mfsr     R N X X: X)),
             (597, X_ent!(lswi     R R R X: X)),
             (598, Dir2(9, &[
                 /* 0 */ X_ent!(sync    X X X X: X),
