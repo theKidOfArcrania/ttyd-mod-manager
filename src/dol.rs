@@ -2,7 +2,7 @@ use std::{borrow::Cow, cmp::min, collections::BTreeMap, io, mem::size_of};
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::{reader, rel::{self, BigU32}};
+use crate::rel::BigU32;
 
 pub const MAX_DOL_SECTIONS: usize = 18;
 

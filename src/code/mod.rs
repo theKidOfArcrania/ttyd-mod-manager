@@ -455,7 +455,11 @@ fn match_fragment(
                 let addr = match actual {
                     Ok(off) => {
                         if rel {
-                            base + (i as u32 * 4 + off)
+                            if off > i32::MAX as u32 {
+                                base - (-(off as i32 + i as i32 * 4) as u32)
+                            } else {
+                                base + (i as u32 * 4 + off)
+                            }
                         } else {
                             return pval.add_part(tag, off);
                         }

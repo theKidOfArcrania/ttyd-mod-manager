@@ -463,6 +463,7 @@ static INSN_ROOT: InsnClass = {
             (58,  X_ent!(cntlzd   R R X X: Rc !)),
             (60,  X_ent!(andc     R R R X: Rc !)),
             (68,  X_ent!(td       N R R X: X)),
+            (83,  X_ent!(mfmsr    R X X X: X)),
             (84,  X_ent!(ldarx    R R R X: X)),
             (86,  Dir1(10, &[
                 /* 0 */ X_ent!(dcbf  X R R X: X),
@@ -476,6 +477,7 @@ static INSN_ROOT: InsnClass = {
                 /* 0 */ X_ent!(mtcrf  R M X X: X !),
                 /* 1 */ X_ent!(mtocrf R M X X: X !),
             ])),
+            (146, X_ent!(mtmsr    R X X X: X)),
             (149, X_ent!(stdx     R R R X: X)),
             (150, X_ent!(stwcx    R R R X: X)),
             (151, X_ent!(stwx     R R R X: X)),

@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Write as _},
     io,
-    mem::size_of, ops::{Add, AddAssign},
+    mem::size_of, ops::{Add, AddAssign, Sub},
 };
 
 use serde::{de::IntoDeserializer, Deserialize, Serialize};
@@ -147,6 +147,8 @@ pub struct RawSymEntry {
     pub value: String,
     #[serde(skip)]
     pub local: bool,
+    #[serde(skip)]
+    pub default_type: bool,
 }
 
 impl RawSymEntry {
@@ -278,6 +280,26 @@ impl<'a> IntoIterator for &'a mut RawSymtab {
 }
 
 impl RawSymtab {
+    pub fn write_to<W: io::Write>(&self, writer: W) -> anyhow::Result<()> {
+        let mut wtr = csv::WriterBuilder::new()
+            .has_headers(true)
+            .from_writer(writer);
+        for sym in &self.syms {
+            wtr.serialize(sym)?;
+        }
+        Ok(())
+    }
+
+    pub fn from_reader_raw<R: io::Read>(rdr: R) -> anyhow::Result<Self> {
+        let mut rdr = csv::Reader::from_reader(rdr);
+        let mut syms = Vec::new();
+        let headers = rdr.headers()?.clone();
+        for record in rdr.records() {
+            syms.push(record?.deserialize(Some(&headers))?);
+        }
+        Ok(Self { syms })
+    }
+
     pub fn from_reader<R: io::Read>(rdr: R) -> anyhow::Result<Self> {
         let mut rdr = csv::Reader::from_reader(rdr);
         let mut syms = Vec::new();
@@ -292,8 +314,7 @@ impl RawSymtab {
         ]);
 
         for record in rdr.records() {
-            let record = record?;
-            let mut ent: RawSymEntry = record.deserialize(Some(&headers))?;
+            let mut ent: RawSymEntry = record?.deserialize(Some(&headers))?;
 
             // Make sure function entries do not exist in data
             if ent.value_type == DataType::Simple(SimpleType::Unknown) &&
@@ -302,6 +323,7 @@ impl RawSymtab {
                         "WARNING: {} entry's type assumed to be function",
                         ent.name,
                     );
+                    ent.default_type = true;
                     ent.value_type = DataType::Simple(SimpleType::Function);
             }
 
@@ -353,6 +375,17 @@ impl Add<u32> for SymAddr {
         match self {
             Self::Dol(off) => Self::Dol(off + rhs),
             Self::Rel(file, saddr) => Self::Rel(file, saddr + rhs),
+        }
+    }
+}
+
+impl Sub<u32> for SymAddr {
+    type Output = SymAddr;
+
+    fn sub(self, rhs: u32) -> Self::Output {
+        match self {
+            Self::Dol(off) => Self::Dol(off - rhs),
+            Self::Rel(file, saddr) => Self::Rel(file, saddr - rhs),
         }
     }
 }

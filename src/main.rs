@@ -4,9 +4,13 @@
 #![feature(generic_const_exprs)]
 #![feature(error_generic_member_access)]
 #![feature(strict_overflow_ops)]
+#![feature(const_trait_impl)]
 #![allow(incomplete_features)]
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap}, fs::{self, File}, io::Write, path::{Path, PathBuf}
+    collections::{BTreeMap, BTreeSet, HashMap},
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
 };
 
 use anyhow::bail;
@@ -401,17 +405,36 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
-        Command::FixSymbols { symdb } => {
+        Command::FixSymbols { symdb: symdb_file } => {
+            let mut raw_symtab = sym::RawSymtab::from_reader_raw(
+                File::open(symdb_file)?
+            )?;
             let symdb = sym::SymbolDatabase::new(
                 area_map.clone(),
-                sym::RawSymtab::from_reader(File::open(symdb)?)?,
+                raw_symtab.clone(),
             );
 
             let dol_path = env.base_dir().join("P-G8ME/sys/main.dol");
             let dol_file = dol::DolFile::from_reader(File::open(dol_path)?)?;
-            for sym in symdb.dol_iter() {
-                println!("{}", sym.name);
-                let data = gen::Data::read_dol(&dol_file, sym, &symdb)?;
+            for sym in &mut raw_symtab {
+                if &sym.area == "_main" {
+                    if !sym.default_type {
+                        continue;
+                    }
+                    match gen::Data::read_dol(&dol_file, sym, &symdb) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!(
+                                "{}: {:?}",
+                                sym.name,
+                                &dol_file.lookup_section_data(
+                                    sym.ram_addr.unwrap()
+                                ).unwrap()[..sym.size as usize],
+                            );
+                            return Err(e.into());
+                        }
+                    }
+                }
             }
 
             Ok(())

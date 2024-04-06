@@ -88,10 +88,15 @@ impl<'r, 'b> SymReader for DolReader<'r, 'b> {
                 "Bad address: 0x{:08x}",
                 self.current,
             ))))?;
+        let cnt = T::size();
         if data.len() < size_of::<T>() {
             let rel_pos = self.rel_pos();
             bail!(ReadOverflow(rel_pos, rel_pos + data.len() as u32))
         }
+        if self.max_bound - self.rel_pos() < cnt {
+            bail!(ReadOverflow(self.rel_pos() + cnt, self.max_bound));
+        }
+        self.current += cnt;
         Ok(rel::Symbol::Value(bytemuck::pod_read_unaligned(&data[0..size_of::<T>()])))
     }
 
@@ -111,7 +116,7 @@ impl<'r, 'b> SymReader for DolReader<'r, 'b> {
     }
 
     fn is_bounded(&self) -> bool {
-        true
+        self.bounded
     }
 }
 
@@ -163,7 +168,7 @@ impl<'r, 'b> SymReader for RelocOverlayReader<'r, 'b> {
 
     fn read<T: Pod + SaneSize>(&mut self) -> Result<rel::Symbol<T>, Error> {
         let res = self.overlay.read(self.current)?;
-        let cnt = size_of::<T>() as u32;
+        let cnt = T::size();
         if self.max_bound - self.rel_pos() < cnt {
             bail!(ReadOverflow(self.rel_pos() + cnt, self.max_bound));
         }
