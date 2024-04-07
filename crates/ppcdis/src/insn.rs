@@ -318,6 +318,11 @@ static INSN_ROOT: InsnClass = {
         // TODO: check
         HashMap::from_iter([
             (0,   X_ent!(ps_cmpu0   C F F X: X)),
+            (18,  X_ent!(ps_div     F F F X: Rc)),
+            (20,  X_ent!(ps_sub     F F F X: Rc)),
+            (21,  X_ent!(ps_add     F F F X: Rc)),
+            (24,  X_ent!(ps_res     F X F X: Rc)),
+            (26,  X_ent!(ps_rsqrte  F X F X: Rc)),
             (32,  X_ent!(ps_cmpo0   C F F X: X)),
             (40,  X_ent!(ps_neg     F X F X: Rc)),
             (64,  X_ent!(ps_cmpu1   C F F X: X)),
@@ -338,34 +343,34 @@ static INSN_ROOT: InsnClass = {
     // 248 F R R (:3, :1)
     // paired-single operators
     static INSN_OP4_PS: [InsnClass; 32] = [
-        /* 00 */ Dir10(21, &INSN_OP4_PS_EXT), // PS CMP EXT
-        /* 01 */ Unk,
-        /* 02 */ Unk,
-        /* 03 */ Unk,
-        /* 04 */ Unk,
-        /* 05 */ Unk,
+        /* 00 */ Dir10(21, &INSN_OP4_PS_EXT), // PS ARITH EXT
+        /* 01 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 02 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 03 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 04 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 05 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
         /* 06 */ X_ent!(psq_lx     F R R Q: X),
         /* 07 */ X_ent!(psq_stx    F R R Q: X),
-        /* 08 */ Dir10(21, &INSN_OP4_PS_EXT), // PS ARITH EXT
-        /* 09 */ Unk,
+        /* 08 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 09 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
         /* 10 */ X_ent!(ps_sum0    F F F F: Rc),
         /* 11 */ X_ent!(ps_sum1    F F F F: Rc),
         /* 12 */ X_ent!(ps_muls0   F F X F: Rc),
         /* 13 */ X_ent!(ps_muls1   F F X F: Rc),
         /* 14 */ X_ent!(ps_madds0  F F F F: Rc),
         /* 15 */ X_ent!(ps_madds1  F F F F: Rc),
-        /* 16 */ Unk,
-        /* 17 */ Unk,
-        /* 18 */ X_ent!(ps_div     F F F X: Rc),
-        /* 19 */ Unk,
-        /* 20 */ X_ent!(ps_sub     F F F X: Rc),
-        /* 21 */ X_ent!(ps_add     F F F X: Rc),
-        /* 22 */ Unk,
+        /* 16 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 17 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 18 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 19 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 20 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 21 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 22 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
         /* 23 */ X_ent!(ps_sel     F F F F: Rc),
-        /* 24 */ X_ent!(ps_res     F X F X: Rc),
+        /* 24 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
         /* 25 */ X_ent!(ps_mul     F F X F: Rc),
-        /* 26 */ X_ent!(ps_rsqrte  F X F X: Rc),
-        /* 27 */ Unk,
+        /* 26 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
+        /* 27 */ Dir10(21, &INSN_OP4_PS_EXT), // PS EXT
         /* 28 */ X_ent!(ps_msub    F F F F: Rc),
         /* 29 */ X_ent!(ps_madd    F F F F: Rc),
         /* 30 */ X_ent!(ps_nmsub   F F F F: Rc),
@@ -662,8 +667,8 @@ static INSN_ROOT: InsnClass = {
         /* 15 */ Ent("addis", D(R, R, S, false)), // add immediate shifted
         /* 16 */ Ent("bc", B), // branch conditional [l][a]
         /* 17 */ Dir1(30, &[
-            /* 0 */ Ent("sc", InsnDesc::SC), // system call
-            /* 1 */ Unk,
+            /* 0 */ Unk,
+            /* 1 */ Ent("sc", InsnDesc::SC), // system call
         ]),
         /* 18 */ Ent("b", I), // branch [l][a]
         /* 19 */ Dir10(21, &INSN_OP19),

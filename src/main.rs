@@ -10,7 +10,7 @@ use std::{
     borrow::Cow,
     collections::{hash_map as hm, BTreeMap, BTreeSet, HashMap},
     fs::{self, File},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -70,6 +70,10 @@ enum Command {
     FixSymbols {
         /// The symbol database to work with
         symdb: String,
+        /// Whether to not fatally exit after one error of symbols failing to
+        /// parse. Defaults to false
+        #[arg(long)]
+        exit_fail_parse: bool
     },
     /// Manage rel files
     Rel {
@@ -426,7 +430,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
-        Command::FixSymbols { symdb: symdb_file } => {
+        Command::FixSymbols { symdb: symdb_file, exit_fail_parse } => {
             let mut raw_symtab = sym::RawSymtab::from_reader_raw(
                 File::open(&symdb_file)?
             )?;
@@ -527,11 +531,14 @@ fn main() -> Result<(), anyhow::Error> {
                 match res {
                     Ok(_) => {}
                     Err(e) => {
-                        println!(
+                        eprintln!(
                             "****FAILED: {e}: {}: {:?}",
                             sym.name,
                             sdata,
                         );
+                        if exit_fail_parse {
+                            return Err(e.into());
+                        }
                         continue;
                     }
                 }
