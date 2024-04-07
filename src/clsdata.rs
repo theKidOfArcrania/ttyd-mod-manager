@@ -607,6 +607,15 @@ pub struct TreeData {
     callback: Ptr<evt::Script>,
 }
 
+#[derive(Debug, CTypeable, CRead, CDump, Size, ConstSize)]
+#[cread(ptr = sym::SymAddr)]
+#[cdump(ctx = sym::AddrDumpCtx<'_>, error = fmt::Error)]
+#[repr(C)]
+pub struct FloatPair {
+    first: f32,
+    second: f32,
+}
+
 mk_clsdata! {
     AudienceItemWeight: AudienceItemWeightArr !stub,
     BattleGroupSetup: BattleGroupSetupArr !stub,
@@ -637,4 +646,5 @@ mk_clsdata! {
     ShopSellPriceList: ShopSellPriceListArr !stub,
     StatusVulnerability: StatusVulnerabilityArr !stub,
     TreeData: TreeDataArr,
+    FloatPair: FloatPairArr,
 }

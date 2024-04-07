@@ -54,6 +54,18 @@ impl SectionType {
             Self::Ctors => true,
         }
     }
+
+    pub fn is_bss(self) -> bool {
+        match self {
+            Self::Text => false,
+            Self::Data => false,
+            Self::Bss => true,
+            Self::Init => false,
+            Self::Rodata => false,
+            Self::Dtors => false,
+            Self::Ctors => false,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]

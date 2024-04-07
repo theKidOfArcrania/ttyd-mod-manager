@@ -7,9 +7,10 @@
 #![feature(const_trait_impl)]
 #![allow(incomplete_features)]
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, hash_map as hm},
+    borrow::Cow,
+    collections::{hash_map as hm, BTreeMap, BTreeSet, HashMap},
     fs::{self, File},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -360,6 +361,26 @@ fn build_cmd(env: &Env) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+fn get_rel_file<'r>(
+    env: &Env,
+    rel_files: &'r mut HashMap<String, rel::RelocFileOverlay>,
+    area_name: &str,
+) -> Result<&'r rel::RelocFileOverlay, anyhow::Error> {
+    Ok(match rel_files.entry(area_name.to_string()) {
+        hm::Entry::Occupied(ent) => ent.into_mut(),
+        hm::Entry::Vacant(ent) => {
+            let data = fs::read(env.base_dir().join(format!(
+                "P-G8ME/files/rel/{}.rel",
+                area_name,
+            )))?;
+            let rel = rel::RelFile::new_owned(data);
+            ent.insert(rel::RelocFileOverlay::new_from(rel))
+        }
+    })
+}
+
+const SCRIPT_TAG: [u8;8] = [1, 0, 0, 0, 2, 0, 0, 0];
+
 fn main() -> Result<(), anyhow::Error> {
     let cli = Cli::parse();
     let env = Env::new(&cli)?;
@@ -410,7 +431,7 @@ fn main() -> Result<(), anyhow::Error> {
                 File::open(&symdb_file)?
             )?;
 
-            let mut parsed_symtab = sym::RawSymtab::from_reader(
+            let parsed_symtab = sym::RawSymtab::from_reader(
                 File::open(&symdb_file)?
             )?;
             let symdb = sym::SymbolDatabase::new(
@@ -431,60 +452,90 @@ fn main() -> Result<(), anyhow::Error> {
                         continue;
                     }
                 };
-                let parsed_sym = symdb.get(saddr).expect("Should exist");
+                let mut parsed_sym = symdb.get(saddr).expect("Should exist");
                 if sym.value_type != sym::DataType::default() {
                     continue;
                 }
-                if !sym.sec_type.is_exec() {
-                    //eprintln!(
-                    //    "WARNING: {} entry's type is unknown",
-                    //    sym.name,
-                    //);
+                if sym.sec_type.is_bss() {
                     continue;
                 }
-                println!("Converting {}", sym.name);
-                match saddr {
-                    sym::SymAddr::Dol(_) => {
-                        match gen::Data::read_dol(&dol_file, &parsed_sym, &symdb) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                let addr = sym.ram_addr.unwrap();
-                                println!(
-                                    "****FAILED: {e}: {}: {:?}",
-                                    sym.name,
-                                    &dol_file.lookup_section_data(addr)
-                                        .unwrap()[..sym.size as usize],
-                                );
-                                continue;
+                let sdata = match saddr {
+                    sym::SymAddr::Dol(addr) => {
+                        match dol_file.lookup_section_data(addr) {
+                            None => Cow::Borrowed(&[] as &[u8]),
+                            Some(Cow::Owned(mut o)) => {
+                                o.truncate(sym.size as usize);
+                                Cow::Owned(o)
+                            }
+                            Some(Cow::Borrowed(b)) => {
+                                Cow::Borrowed(&b[..sym.size as usize])
                             }
                         }
+                    }
+                    sym::SymAddr::Rel(_, saddr) => {
+                        let overlay = get_rel_file(&env, &mut rel_files, &sym.area)?
+                            .overlay();
+                        // TODO: this is very slow because we are reading byte
+                        // by byte, but don't really care since this isn't
+                        // running by default in production code
+                        let mut ret = Vec::with_capacity(sym.size as usize);
+                        for i in 0..sym.size {
+                            ret.push(match overlay.read(saddr + i)? {
+                                rel::Symbol::Value(v) => v,
+                                _ => 0u8,
+                            })
+                        }
+
+                        Cow::Owned(ret)
+                    }
+                };
+                let mut assumed_data_tp = sym::DataType::Simple(
+                    sym::SimpleType::Function
+                );
+                if !sym.sec_type.is_exec() {
+                    let data = sdata.as_ref();
+                    if data.len() % 4 == 0 && data.ends_with(&SCRIPT_TAG) {
+                        eprintln!(
+                            "{} entry's type assumed to be evt.",
+                            sym.name,
+                        );
+                        assumed_data_tp = sym::DataType::Simple(sym::SimpleType::Evt);
+                    } else if data == [0xbf, 0x80, 0, 0, 0x3f, 0x80, 0, 0] ||
+                        data == [0x3f, 0x80, 0, 0, 0xbf, 0x80, 0, 0] {
+                            assumed_data_tp = sym::DataType::Class(
+                                clsdata::ClsDataType::FloatPair
+                            );
+                    } else {
+                        eprintln!(
+                            "WARNING: {} entry's type is unknown",
+                            sym.name,
+                        );
+                        continue;
+                    }
+                    parsed_sym.value_type = assumed_data_tp;
+                }
+                let res = match saddr {
+                    sym::SymAddr::Dol(_) => {
+                        gen::Data::read_dol(&dol_file, &parsed_sym, &symdb)
                     }
                     sym::SymAddr::Rel(_, _) => {
-                        let foverlay = match rel_files.entry(sym.area.to_string()) {
-                            hm::Entry::Occupied(ent) => ent.into_mut(),
-                            hm::Entry::Vacant(ent) => {
-                                let data = fs::read(env.base_dir().join(format!(
-                                    "P-G8ME/files/rel/{}.rel",
-                                    sym.area,
-                                )))?;
-                                let rel = rel::RelFile::new_owned(data);
-                                ent.insert(rel::RelocFileOverlay::new_from(rel))
-                            }
-                        };
-                        let overlay = foverlay.overlay();
-                        match gen::Data::read_rel(overlay, &parsed_sym, &symdb) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!(
-                                    "****FAILED: {e}: {}: {saddr:?}",
-                                    sym.name,
-                                );
-                                continue;
-                            }
-                        }
+                        let overlay = get_rel_file(&env, &mut rel_files, &sym.area)?
+                            .overlay();
+                        gen::Data::read_rel(overlay, &parsed_sym, &symdb)
+                    }
+                };
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!(
+                            "****FAILED: {e}: {}: {:?}",
+                            sym.name,
+                            sdata,
+                        );
+                        continue;
                     }
                 }
-                sym.value_type = sym::DataType::Simple(sym::SimpleType::Function);
+                sym.value_type = assumed_data_tp;
             }
 
             raw_symtab.write_to(File::create(symdb_file)?)?;
