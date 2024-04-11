@@ -46,5 +46,7 @@ USERFUNC_DEF(evt_item_entry);
 USERFUNC_DEF(evt_item_set_scale);
 USERFUNC_DEF(evt_item_delete);
 
+USERFUNC_DEF(evt_cam_shake);
+USERFUNC_DEF(evt_eff64);
 
 #endif

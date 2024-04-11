@@ -2,7 +2,7 @@ use std::{borrow::Cow, cmp::min, collections::BTreeMap, io, mem::size_of};
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::rel::BigU32;
+use crate::{bpatch, rel::BigU32};
 
 pub const MAX_DOL_SECTIONS: usize = 18;
 
@@ -113,5 +113,58 @@ impl<'b> DolFile<'b> {
                     [offset_in_sect..sect.length as usize])
             }
         })
+    }
+
+    pub fn patch(&mut self, patches: &bpatch::PatchFile) -> bpatch::Res<()> {
+        #[allow(unused)]
+        macro_rules! error {
+            ($e:expr) => {{
+                use bpatch::ErrorType::*;
+                bpatch::Error::new($e)
+            }}
+        }
+
+        #[allow(unused)]
+        macro_rules! bail {
+            ($e:expr) => {{
+                use bpatch::ErrorType::*;
+                return Err(bpatch::Error::new($e));
+            }}
+        }
+
+        let mut raw_patches = Vec::new();
+        for patch in patches.dol_patches() {
+            let mut addr = patch.header.addr.get();
+            let mut data = patch.content.as_slice();
+            while data.len() > 0 {
+                let sect = self.lookup_section(addr)
+                    .ok_or_else(|| error!(UnknownAddress(addr)))?;
+                let sect_offset = addr - sect.addr;
+                let sect_size = min(
+                    min(data.len(), u32::MAX as usize) as u32,
+                    sect.length - sect_offset,
+                );
+                if sect.offset != 0 {
+                    raw_patches.push((
+                        (sect.offset + sect_offset) as usize,
+                        &data[..sect_size as usize],
+                    ));
+                }
+                addr += sect_size;
+                data = &data[sect_size as usize..];
+            }
+        }
+
+        let data = self.data.to_mut();
+        for (offset, new_patch) in raw_patches {
+            data[offset..offset+new_patch.len()]
+                .copy_from_slice(new_patch)
+        }
+
+        Ok(())
+    }
+
+    pub fn write<W: io::Write>(&self, mut wtr: W) -> io::Result<()> {
+        wtr.write_all(&self.data)
     }
 }

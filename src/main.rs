@@ -19,6 +19,7 @@ use clap::{Parser, Subcommand};
 
 extern crate num_derive;
 
+mod bpatch;
 mod code;
 mod clsdata;
 mod dol;
@@ -192,6 +193,7 @@ fn copy_dir_all(
             )?;
         } else {
             let filename = entry.file_name().to_string_lossy().to_string();
+            let mut handled = false;
             for hdr in patch_handlers {
                 if let Some(base) = filename.strip_suffix(&hdr.ext_pattern) {
                     // We found a patch handler match
@@ -237,12 +239,15 @@ fn copy_dir_all(
                             hdr(base_path, &entry.path(), &output_path)
                         }
                     }?;
+                    handled = true;
                     break;
                 }
             }
 
             // Default case
-            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+            if !handled {
+                fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+            }
         }
     }
     Ok(())
@@ -359,6 +364,10 @@ fn build_cmd(env: &Env) -> Result<(), anyhow::Error> {
             ".txt.msgpatch".into(),
             ".txt".into(),
             HandlerType::ByByte(Box::new(&msg::patch_msgfile)),
+        ), PatchHandler::new(
+            ".dol.binpatch".into(),
+            ".dol".into(),
+            HandlerType::ByFile(Box::new(&bpatch::patch_dol)),
         )],
     )?;
 

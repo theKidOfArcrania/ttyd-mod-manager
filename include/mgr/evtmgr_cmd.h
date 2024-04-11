@@ -403,7 +403,7 @@ f32 evtSetFloat(struct EventEntry* entry, s32 index, f32 value);
 #ifdef __MWERKS__
 #define PTR(value) ((s32)(value))
 #else
-#define PTR(value) ((void*)(value))
+#define PTR(value) ((long)(value))
 #endif
 
 #endif //_EVT_H_
