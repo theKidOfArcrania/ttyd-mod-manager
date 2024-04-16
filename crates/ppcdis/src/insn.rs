@@ -834,7 +834,8 @@ impl<S: Clone> RawInsn<S> {
                         rel::RelocType::PPCRel24
                         | rel::RelocType::PPCRel14
                         | rel::RelocType::PPCRel14BrTaken
-                        | rel::RelocType::PPCRel14BrNotTaken => RelValue::SymbolRel,
+                        | rel::RelocType::PPCRel14BrNotTaken
+                        | rel::RelocType::PPCRel32 => RelValue::SymbolRel,
                     })(sym.clone())
                 } else {
                     RelValue::Unknown

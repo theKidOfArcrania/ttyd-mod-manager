@@ -25,6 +25,12 @@ pub enum ErrorType {
     NoSection,
     #[error("Relocation is too complex")]
     ComplexRelocation,
+    #[error("Relocation is not allowed in rel format: {0:?}")]
+    UnallowedRelocation(ppcdis::RelocType),
+    #[error("Relocation is not allowed in rel format: {0:?}: target file ({1}) is not same as relocation site file ({2})")]
+    UnallowedRelocationFileMismatch(ppcdis::RelocType, u32, u32),
+    #[error("Relocation to section `{0}` is not permitted because that section is deleted.")]
+    UnallowedRelocationSection(String),
     #[error("Unable to address `{0}` relative to any symbol")]
     UnaddressableSymbol(SectionAddr),
     #[error("Unable to find symbol `{0:?}` in symbol database")]
@@ -322,11 +328,11 @@ pub const EXEC_SECTIONS: [&str; 2] =
     [".init", ".text"];
 
 pub fn is_permitted_section(section: &object::Section) -> bool {
-    matches!(section.name(), Ok(name) if PERMITTED_SECTIONS.contains(&name))
+    matches!(section.name(), Ok(name) if PERMITTED_SECTIONS.contains(&name) || name.starts_with(".text"))
 }
 
 pub fn is_exec_section(section: &object::Section) -> bool {
-    matches!(section.name(), Ok(name) if EXEC_SECTIONS.contains(&name))
+    matches!(section.name(), Ok(name) if EXEC_SECTIONS.contains(&name) || name.starts_with(".text"))
 }
 
 struct RawRelocEntry {
@@ -342,6 +348,39 @@ pub struct RelFile<'b> {
     sections: Vec<SectionHeader>,
     imp: Vec<ImpEntry>,
     relocs: BTreeMap<u32, Vec<RelocEntry>>,
+}
+
+fn try_resolve(
+    kind: ppcdis::RelocType,
+    site: sym::SymAddr,
+    target: sym::SymAddr,
+    site_section_offsets: &BTreeMap<u8, u32>,
+) -> Option<(ppcdis::RelocAction, u32, u32)> {
+    match site {
+        sym::SymAddr::Dol(site) => {
+            match target {
+                sym::SymAddr::Dol(target) => Some((kind.eval_always(target, site), target, site)),
+                sym::SymAddr::Rel(_, _) => None,
+            }
+        }
+        sym::SymAddr::Rel(site_file, site) => {
+            match target {
+                sym::SymAddr::Dol(_) => None, // TODO:
+                sym::SymAddr::Rel(target_file, target) => {
+                    if kind.is_rel() {
+                        if target_file != site_file {
+                            return None;
+                        }
+                        let site = site.offset + site_section_offsets.get(&site.sect)?;
+                        let target = target.offset + site_section_offsets.get(&target.sect)?;
+                        Some((kind.eval_always(target, site), target, site))
+                    } else {
+                        None
+                    }
+                }
+            }
+        },
+    }
 }
 
 impl<'b> RelFile<'b> {
@@ -377,6 +416,7 @@ impl<'b> RelFile<'b> {
         // Create all the main sections
         let mut section_data = Vec::new();
         let mut sections = Vec::new();
+        let mut section_offsets = BTreeMap::new();
         let section_offset = u32::try_from(size_of::<RelHeader>() +
             elf.sections().count() * size_of::<SectionHeader>())?;
         for section in elf.sections() {
@@ -413,6 +453,10 @@ impl<'b> RelFile<'b> {
                 length,
             };
             sections.push(hdr);
+            section_offsets.insert(
+                u8::try_from(section.index().0)?,
+                u32::try_from(section_data.len())?,
+            );
             section_data.extend_from_slice(data);
             while section_data.len() & 7 != 0 {
                 section_data.push(0);
@@ -427,7 +471,51 @@ impl<'b> RelFile<'b> {
                 // actually even including in the final binary
                 continue;
             }
-            for (addr, reloc) in section.relocations() {
+            for (site_off, reloc) in section.relocations() {
+                let addend = i32::try_from(reloc.addend())?;
+                let (target_id, target_sect, symbol_off) = match reloc.target() {
+                    object::RelocationTarget::Symbol(sid) => {
+                        let sym = elf.symbol_by_index(sid)?;
+                        if sym.is_undefined() {
+                            let name = sym.name()?;
+                            let addr = symdb.get_addr(name)
+                                .ok_or_else(|| {
+                                    error!(SymbolNameNotFound(name.to_string()))
+                                })?;
+                            match addr {
+                                sym::SymAddr::Dol(abs) => {
+                                    // TODO: get section in Dol
+                                    (0, 0, abs)
+                                }
+                                sym::SymAddr::Rel(file, saddr) => {
+                                    if file == id {
+                                        bail!(UnknownSymbol(sym.name()?.to_string()));
+                                    }
+                                    (file, saddr.sect, saddr.offset)
+                                }
+                            }
+                        } else {
+                            (
+                                id,
+                                sym.section_index()
+                                    .expect("should be defined")
+                                    .0
+                                    .try_into()?,
+                                u32::try_from(sym.address())?,
+                            )
+                        }
+                    },
+                    target => bail!(UnsupportedRelocationTarget(target))
+                };
+
+                let cur_sect = elf.section_by_index(
+                    object::SectionIndex(target_sect.into())
+                )?;
+                if target_id == id && !is_permitted_section(&cur_sect) {
+                    bail!(UnallowedRelocationSection(cur_sect.name()?.to_string()))
+                }
+
+                let our_id = section.index();
                 let kind = match reloc.flags() {
                     object::RelocationFlags::Elf { r_type } => match r_type {
                         elf::R_PPC_ADDR32
@@ -446,58 +534,78 @@ impl<'b> RelFile<'b> {
                             ppcdis::RelocType::PPCRel14BrTaken,
                         elf::R_PPC_REL14_BRNTAKEN =>
                             ppcdis::RelocType::PPCRel14BrNotTaken,
+                        elf::R_PPC_REL32 => ppcdis::RelocType::PPCRel32,
                         _ => bail!(BadRelocationType(r_type))
                     }
                     _ => bail!(ComplexRelocation)
                 };
 
-                let addend = i32::try_from(reloc.addend())?;
-                let (target_id, target_sect, target_off) = match reloc.target() {
-                    object::RelocationTarget::Symbol(sid) => {
-                        let sym = elf.symbol_by_index(sid)?;
-                        if sym.is_undefined() {
-                            let name = sym.name()?;
-                            let addr = symdb.get_addr(name)
-                                .ok_or_else(|| {
-                                    error!(SymbolNameNotFound(name.to_string()))
-                                })?;
-                            match addr {
-                                sym::SymAddr::Dol(abs) => {
-                                    // TODO: get section in Dol
-                                    (0, 0, abs.strict_add_signed(addend))
-                                }
-                                sym::SymAddr::Rel(file, saddr) => {
-                                    if file == id {
-                                        bail!(UnknownSymbol(sym.name()?.to_string()));
-                                    }
-                                    (file, saddr.sect, saddr.offset)
-                                }
-                            }
-                        } else {
-                            (
-                                id,
-                                sym.section_index()
-                                    .expect("should be defined")
-                                    .0
-                                    .try_into()?,
-                                u32::try_from(sym.address())?
-                                    .strict_add_signed(addend),
-                            )
-                        }
-                    },
-                    target => bail!(UnsupportedRelocationTarget(target))
-                };
+                let target_off = symbol_off.strict_add_signed(addend);
 
-                let our_id = section.index();
+                // If the relocation entry is a relative reloc within the section
+                // we can inline that relocation entry
+                if let Some((action, _, site)) = try_resolve(
+                    kind,
+                    sym::SymAddr::Rel(id, SectionAddr {
+                        sect: our_id.0.try_into()?,
+                        offset: site_off.try_into()?,
+                    }),
+                    if target_id == 0 {
+                        sym::SymAddr::Dol(target_off)
+                    } else {
+                        sym::SymAddr::Rel(target_id, SectionAddr {
+                            sect: target_sect,
+                            offset: target_off,
+                        })
+                    },
+                    &section_offsets,
+                ) {
+                    let site = site as usize;
+                    match action {
+                        ppcdis::RelocAction::None => continue,
+                        ppcdis::RelocAction::Sect
+                        | ppcdis::RelocAction::End => bail!(ComplexRelocation),
+                        ppcdis::RelocAction::Write32 { val, mask } => {
+                            let old_val = u32::from_be_bytes(
+                                section_data[site..site+4].try_into()
+                                    .expect("Should be 4 bytes")
+                            );
+                            section_data[site..site+4].copy_from_slice(
+                                &u32::to_be_bytes((val & mask) | (old_val & !mask))
+                            );
+                        }
+                        ppcdis::RelocAction::Write16 { val, mask } => {
+                            let old_val = u16::from_be_bytes(
+                                section_data[site..site+2].try_into()
+                                    .expect("Should be 2 bytes")
+                            );
+                            section_data[site..site+2].copy_from_slice(
+                                &u16::to_be_bytes((val & mask) | (old_val & !mask))
+                            );
+                        },
+                    }
+                    continue;
+                }
+
+                if kind == ppcdis::RelocType::PPCRel32 {
+                    if !kind.is_rel() {
+                        bail!(UnallowedRelocation(kind));
+                    }
+
+                    if id != target_id  {
+                        bail!(UnallowedRelocationFileMismatch(kind, target_id, id));
+                    }
+                }
+
                 raw_relocs.entry(target_id)
                     .or_insert_with(|| BTreeMap::new())
                     .entry(our_id.0)
                     .or_insert_with(|| Vec::new())
                     .push(RawRelocEntry {
-                        offset: addr.try_into()?,
+                        offset: site_off.try_into()?,
                         type_: kind as u8,
                         section: target_sect,
-                        addend: target_off.strict_add_signed(addend)
+                        addend: target_off
                     })
             }
         }
@@ -678,8 +786,6 @@ impl<'b> RelFile<'b> {
             local_syms.insert(SectionAddr::new(i as u8, 0), sect_sym.id());
         }
 
-        println!("{local_syms:?}");
-
         // Popluate the symbol table, hoisting the locals to before the
         // globals because requirements
         let mut locals = builder.symbols.count();
@@ -759,6 +865,7 @@ impl<'b> RelFile<'b> {
                 ppcdis::RelocType::PPCRel14 => elf::R_PPC_REL14,
                 ppcdis::RelocType::PPCRel14BrTaken => elf::R_PPC_REL14_BRTAKEN,
                 ppcdis::RelocType::PPCRel14BrNotTaken => elf::R_PPC_REL14_BRNTAKEN,
+                ppcdis::RelocType::PPCRel32 => elf::R_PPC_REL32,
                 ppcdis::RelocType::RvlNone => continue,
                 ppcdis::RelocType::RvlSect => {
                     cur_addr = Some(SectionAddr::new(
@@ -784,7 +891,9 @@ impl<'b> RelFile<'b> {
                         .range(target_saddr..)
                         .next()
                         .filter(|(addr, _)| addr.sect == target_saddr.sect))
-                    .ok_or_else(|| error!(UnaddressableSymbol(target_saddr)))?;
+                    .ok_or_else(|| {
+                        error!(UnaddressableSymbol(target_saddr))
+                    })?;
 
                 (*sid, target_saddr.offset as i32 - base_saddr.offset as i32)
             } else {
@@ -1113,6 +1222,8 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
         for (file, rel) in self.backing.relocations() {
             let rtype =
                 rel.rtype().map_err(|rt| error!(InvalidRelocType(rt)))?;
+
+            cur_addr.as_mut().map(|a| *a += rel.offset.get().into());
             let action = if has_dol && file == 0 {
                 rtype.eval(rel.addend(), None).map_or_else(
                     || SymbolicActions::RelocSymbol(rtype),
@@ -1140,8 +1251,6 @@ impl<'r, 'b> RelocOverlay<'r, 'b> {
                     r => SymbolicActions::RelocSymbol(r),
                 }
             };
-
-            cur_addr.as_mut().map(|a| *a += rel.offset.get().into());
 
             match action {
                 SymbolicActions::Concrete(action) => match action {

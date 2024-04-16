@@ -78,6 +78,9 @@ enum Command {
     },
     /// Manage rel files
     Rel {
+        /// Area name
+        #[arg(short, long)]
+        area_name: Option<String>,
         /// The rel file to process
         #[arg(short = 'f', long)]
         file: String,
@@ -86,6 +89,9 @@ enum Command {
     },
     /// Make a rel file from an input elf binary
     MakeRel {
+        /// Area name
+        #[arg(short, long)]
+        area_name: Option<String>,
         /// Output REL file
         #[arg(short = 'o', long)]
         output: String,
@@ -557,19 +563,20 @@ fn main() -> Result<(), anyhow::Error> {
             raw_symtab.write_to(File::create(symdb_file)?)?;
             Ok(())
         }
-        Command::MakeRel { output, symdb, input, id } => {
-            let file_parts = output
-                .rsplitn(2, '/')
-                .next()
-                .expect("should be at least one part")
-                .split_once(".");
-            let area_name = match file_parts {
-                Some((name, "rel")) => name,
-                _ => {
-                    println!("Unable to extract area name from file!");
-                    "aaa"
-                }
-            };
+        Command::MakeRel { area_name, output, symdb, input, id } => {
+            let area_name = area_name.as_ref().map(String::as_str).or_else(||
+                output.rsplitn(2, '/')
+                    .next()
+                    .expect("should be at least one part")
+                    .split_once(".")
+                    .and_then(|(name, ext)| {
+                        if ext == "rel" {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    })
+            ).ok_or_else(|| anyhow::anyhow!("Unable to extract area name from file!"))?;
             let symdb = sym::SymbolDatabase::new(
                 area_map.clone(),
                 sym::RawSymtab::from_reader(File::open(symdb)?)?,
@@ -586,19 +593,20 @@ fn main() -> Result<(), anyhow::Error> {
             fs::write(output, rel.as_bytes())?;
             Ok(())
         }
-        Command::Rel { file, cmd } => {
-            let file_parts = file
-                .rsplitn(2, '/')
-                .next()
-                .expect("should be at least one part")
-                .split_once(".");
-            let area_name = match file_parts {
-                Some((name, "rel")) => name,
-                _ => {
-                    println!("Unable to extract area name from file!");
-                    "aaa"
-                }
-            };
+        Command::Rel { area_name, file, cmd } => {
+            let area_name = area_name.as_ref().map(String::as_str).or_else(||
+                file.rsplitn(2, '/')
+                    .next()
+                    .expect("should be at least one part")
+                    .split_once(".")
+                    .and_then(|(name, ext)| {
+                        if ext == "rel" {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    })
+            ).ok_or_else(|| anyhow::anyhow!("Unable to extract area name from file!"))?;
             let data = fs::read(env.root_dir().join(file.clone()))?;
             let rel = rel::RelFile::new(&data);
 

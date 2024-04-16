@@ -62,6 +62,10 @@ pub enum RelocType {
     ///
     /// low14_32; (S + A - P) >> 2; mark with branch not taken
     PPCRel14BrNotTaken,
+
+    /// word32; (S + A - P)
+    PPCRel32 = 26,
+
     /// Do not relocate anything, but accumulate the `offset` field for the next relocation offset
     /// calculation. These types are used for referring to relocations that are more than `0xffff`
     /// apart from each other.
@@ -82,6 +86,29 @@ pub enum RelocAction {
 }
 
 impl RelocType {
+    pub fn is_rel(&self) -> bool {
+        match self {
+            RelocType::PPCNone => false,
+            RelocType::PPCAddr32 => false,
+            RelocType::PPCAddr24 => false,
+            RelocType::PPCAddr16 => false,
+            RelocType::PPCAddr16Lo => false,
+            RelocType::PPCAddr16Hi => false,
+            RelocType::PPCAddr16Ha => false,
+            RelocType::PPCAddr14 => false,
+            RelocType::PPCAddr14BrTaken => false,
+            RelocType::PPCAddr14BrNotTaken => false,
+            RelocType::PPCRel24 => true,
+            RelocType::PPCRel14 => true,
+            RelocType::PPCRel14BrTaken => true,
+            RelocType::PPCRel14BrNotTaken => true,
+            RelocType::PPCRel32 => true,
+            RelocType::RvlNone => false,
+            RelocType::RvlSect => false,
+            RelocType::RvlEnd => false,
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             RelocType::PPCNone => 0,
@@ -98,6 +125,7 @@ impl RelocType {
             RelocType::PPCRel14 => 4,
             RelocType::PPCRel14BrTaken => 4,
             RelocType::PPCRel14BrNotTaken => 4,
+            RelocType::PPCRel32 => 4,
             RelocType::RvlNone => 0,
             RelocType::RvlSect => 0,
             RelocType::RvlEnd => 0,
@@ -120,6 +148,7 @@ impl RelocType {
             RelocType::PPCRel14 => 14,
             RelocType::PPCRel14BrTaken => 14,
             RelocType::PPCRel14BrNotTaken => 14,
+            RelocType::PPCRel32 => 32,
             RelocType::RvlNone => 0,
             RelocType::RvlSect => 0,
             RelocType::RvlEnd => 0,
@@ -134,6 +163,10 @@ impl RelocType {
             RelocAction::Sect => 0,
             RelocAction::End => 0,
         }
+    }
+
+    pub fn eval_always(&self, target: u32, site: u32) -> RelocAction {
+        self.eval(target, Some(site)).expect("Should give action")
     }
 
     /// Evaluates a relocation type based on the target address to relocate to
@@ -201,6 +234,10 @@ impl RelocType {
             RelocType::PPCRel14BrNotTaken => RelocAction::Write32 {
                 val: target.wrapping_sub(site?) & MASK_14_32,
                 mask: MASK_14_32 | BIT_TAKEN,
+            },
+            RelocType::PPCRel32 => RelocAction::Write32 {
+                val: target.wrapping_sub(site?),
+                mask: MASK_32,
             },
             RelocType::RvlNone => RelocAction::None,
             RelocType::RvlSect => RelocAction::Sect,
